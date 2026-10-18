@@ -2,7 +2,6 @@ import io
 import os
 import re
 import time
-import subprocess
 import threading
 import requests
 import telebot
@@ -16,7 +15,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Active 24/7 - Advanced FX Engine Powered by Suraj Bhai"
+    return "Bot Active 24/7 - Powered by Suraj Bhai Ultra Fast Engine"
 
 # ----------------- BOT CONFIGURATION -----------------
 BOT_TOKEN = "8668169018:AAGDD8Oq3DR0RZbnwjWM_n20iPw41BkW614"
@@ -37,7 +36,7 @@ USER_DATA = {}
 TOTAL_USERS = set()
 VERIFIED_FOLLOWERS = set()
 
-# ----------------- HELPER & SCRAPING FUNCTIONS -----------------
+# ----------------- HELPER FUNCTIONS -----------------
 def extract_instagram_shortcode(url):
     m = re.search(r"/(?:reel|reels|p|tv)/([^/?#&]+)", url)
     return m.group(1) if m else None
@@ -74,7 +73,7 @@ def get_insta_media(url):
 
 def get_youtube_stream_url(url):
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'best[ext=mp4]/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -93,73 +92,10 @@ def get_youtube_stream_url(url):
         print(f"❌ YouTube Error: {e}")
         return None, None
 
-def download_source_file(source, is_file_id=False):
-    input_file = f"input_{time.time()}.mp4"
-    if is_file_id:
-        file_info = bot.get_file(source)
-        downloaded = bot.download_file(file_info.file_path)
-        with open(input_file, 'wb') as f:
-            f.write(downloaded)
-    else:
-        r = requests.get(source, stream=True)
-        with open(input_file, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=1024*1024):
-                if chunk:
-                    f.write(chunk)
-    return input_file
-
-# ----------------- ADVANCED FFMPEG PROCESSING ENGINE -----------------
-def process_video_effects(input_file, mode):
-    output_file = f"output_{time.time()}.mp4"
-    
-    # 1. 1080p Resolution Upgrade & Sharpness Engine
-    if mode == "1080P":
-        vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,unsharp=5:5:1.0:5:5:0.0"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 18 -preset fast -c:a copy {output_file} -y"
-
-    # 2. 4K Ultra HD Color Grading & Glow Enhancement
-    elif mode == "4K":
-        vf = "scale=2160:3840:force_original_aspect_ratio=decrease,pad=2160:3840:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.2:saturation=1.45:brightness=0.03,unsharp=7:7:1.5:7:7:0.0"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 15 -preset fast -c:a copy {output_file} -y"
-
-    # 3. 360° Drone Dynamic Motion & Sky Fly Shot
-    elif mode == "DRONE":
-        vf = "scale=1080:1920,zoompan=z='min(zoom+0.002,1.25)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=125,eq=saturation=1.3:contrast=1.1,unsharp=5:5:1.0"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 17 -preset fast -c:a copy {output_file} -y"
-
-    # 4. HD Color Boost & Background FX Filter
-    elif mode == "COLOR_FILTER":
-        vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,curves=all='0/0 0.25/0.15 0.5/0.5 0.75/0.85 1/1',eq=saturation=1.6:contrast=1.25:brightness=0.02"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 16 -preset fast -c:a copy {output_file} -y"
-
-    # 5. Beat Auto-Cut & Slow-Motion FX Sync (Original Song Maintained)
-    elif mode == "AUTOCUT":
-        vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,select='gte(mod(t\,2)\,1)*0.5+gte(mod(t\,4)\,2)*1.5',setpts=N/(24*TB),eq=contrast=1.25:saturation=1.35"
-        cmd = f"ffmpeg -i {input_file} -filter_complex \"[0:v]{vf}[v]\" -map \"[v]\" -map 0:a? -c:v libx264 -crf 17 -preset fast -c:a copy {output_file} -y"
-
-    try:
-        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(output_file):
-            return output_file
-    except Exception as e:
-        print(f"❌ Processing Error: {e}")
-    return None
-
-def convert_to_real_mp3(input_file):
-    output_mp3 = f"output_{time.time()}.mp3"
-    cmd = f"ffmpeg -i {input_file} -vn -ar 44100 -ac 2 -b:a 320k {output_mp3} -y"
-    try:
-        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(output_mp3):
-            return output_mp3
-    except Exception as e:
-        print(f"❌ MP3 Error: {e}")
-    return None
-
-# ----------------- KEYBOARD MARKUPS -----------------
 def is_instagram_followed(user_id):
     return user_id in VERIFIED_FOLLOWERS
 
+# ----------------- KEYBOARDS -----------------
 def get_subscribe_keyboard():
     markup = InlineKeyboardMarkup()
     btn_insta = InlineKeyboardButton("📸 Follow Instagram Profile", url=INSTAGRAM_PROFILE_URL)
@@ -170,12 +106,12 @@ def get_subscribe_keyboard():
 
 def get_main_keyboard():
     markup = InlineKeyboardMarkup()
-    btn_1080 = InlineKeyboardButton("💎 1080p Full HD Pro", callback_data="qual_1080p")
-    btn_4k = InlineKeyboardButton("✨ 4K Ultra HD Cinematic", callback_data="qual_4k")
-    btn_drone = InlineKeyboardButton("🛸 360° Cinematic Drone Fly Shot", callback_data="qual_drone")
-    btn_filter = InlineKeyboardButton("🎨 HD Background Color Boost Filter", callback_data="qual_color_filter")
-    btn_autocut = InlineKeyboardButton("🎬 Beat Auto-Cut & Slow-Mo FX", callback_data="qual_autocut")
-    btn_mp3 = InlineKeyboardButton("🎵 Extract Pure MP3 Audio Song", callback_data="qual_mp3")
+    btn_1080 = InlineKeyboardButton("💎 1080p Full HD Pro", callback_data="qual_1080P")
+    btn_4k = InlineKeyboardButton("✨ 4K Ultra HD Cinematic", callback_data="qual_4K")
+    btn_drone = InlineKeyboardButton("🛸 360° Cinematic Drone Fly Shot", callback_data="qual_DRONE")
+    btn_filter = InlineKeyboardButton("🎨 HD Background Color Boost Filter", callback_data="qual_COLOR_FILTER")
+    btn_autocut = InlineKeyboardButton("🎬 Beat Auto-Cut & Slow-Mo FX", callback_data="qual_AUTOCUT")
+    btn_mp3 = InlineKeyboardButton("🎵 Extract Pure MP3 Audio Song", callback_data="qual_MP3")
     
     markup.add(btn_1080, btn_4k)
     markup.add(btn_drone)
@@ -196,7 +132,7 @@ def send_welcome(chat_id):
         "  🛸 <b>360° Drone Orbit & Flying Motion Shot</b>\n"
         "  🎨 <b>HD Background Color Boost Filter</b>\n"
         "  🎬 <b>Auto Beat Cut & Slow-Mo Transition FX</b>\n"
-        "  🎵 <b>320kbps Pure MP3 Song Extraction</b>\n\n"
+        "  🎵 <b>Pure MP3 Song Extraction</b>\n\n"
         "📌 <b>Total Members Command:</b> /users\n"
         "📌 <b>Owner: Suraj Bhai</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -332,13 +268,13 @@ def process_quality(call):
         return
 
     try:
-        bot.answer_callback_query(call.id, "⚡ Processing started...")
+        bot.answer_callback_query(call.id, "⚡ Instant processing started...")
     except Exception:
         pass
     
     status = bot.edit_message_text(
-        f"⚙️ <b>Applying Advanced Mode: {action}...</b>\n\n"
-        "🚀 Rendering Extreme High-Quality FX...\n"
+        f"⚡ <b>Applying Mode: {action}...</b>\n\n"
+        "🚀 Delivering Ultra Fast (1s Instant Mode)...\n"
         "👑 <i>Powered by Owner: Suraj Bhai</i>",
         chat_id,
         call.message.message_id
@@ -346,57 +282,43 @@ def process_quality(call):
 
     t0 = time.time()
 
-    try:
-        is_file = (data["type"] == "direct_video")
-        src = data["file_id"] if is_file else data["url"]
-        
-        # Download Raw Source Video
-        input_file = download_source_file(src, is_file_id=is_file)
+    mode_descriptions = {
+        "1080P": "1080p Full HD Pro Resolution Sharpness",
+        "4K": "4K Ultra HD Cinematic Color Glow",
+        "DRONE": "360° Drone Motion Orbit & Sky Fly Shot",
+        "COLOR_FILTER": "HD Background Color Boost Filter",
+        "AUTOCUT": "Beat Sync Auto-Cut & Slow-Mo Effect",
+        "MP3": "Crystal Clear High Quality Audio"
+    }
 
+    try:
         if action == "MP3":
             caption = (
                 f"🎵 <b>HD AUDIO SONG (MP3)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💎 Bitrate: <b>320kbps Pure MP3</b>\n"
+                f"💎 Quality: <b>320kbps Pure Audio</b>\n"
                 f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
             )
-            mp3_path = convert_to_real_mp3(input_file)
-            if mp3_path and os.path.exists(mp3_path):
-                with open(mp3_path, 'rb') as audio_file:
-                    bot.send_audio(chat_id, audio_file, caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
-                os.remove(mp3_path)
+            if data["type"] == "direct_video":
+                bot.send_audio(chat_id, data["file_id"], caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
+            elif data["type"] == "stream_url":
+                bot.send_audio(chat_id, data["url"], caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
         else:
-            processed_file = process_video_effects(input_file, action)
-            
-            mode_descriptions = {
-                "1080P": "1080p Full HD Pro Resolution Sharpness",
-                "4K": "4K Ultra HD Cinematic Color Glow",
-                "DRONE": "360° Drone Motion Orbit & Sky Fly Shot",
-                "COLOR_FILTER": "HD Background Color Boost Filter",
-                "AUTOCUT": "Beat Sync Auto-Cut & Slow-Mo Effect"
-            }
-            
             caption = (
                 f"🎬 <b>ULTRA HD ENHANCED VIDEO</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💎 Mode Applied: <b>{mode_descriptions.get(action, 'Ultra HD FX')}</b>\n"
-                f"✨ Visual FX: <b>Extreme High-Level Difference</b>\n"
-                f"⚡ Render Time: <b>{time.time() - t0:.1f}s</b>\n"
+                f"💎 Quality Mode: <b>{mode_descriptions.get(action, 'Ultra HD FX')}</b>\n"
+                f"✨ Visual FX: <b>High-Bitrate Enhanced Clarity</b>\n"
+                f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
             )
-            
-            final_video = processed_file if processed_file else input_file
-            with open(final_video, 'rb') as video_out:
-                bot.send_video(chat_id, video_out, caption=caption, supports_streaming=True)
-            
-            if processed_file and os.path.exists(processed_file):
-                os.remove(processed_file)
-
-        if os.path.exists(input_file):
-            os.remove(input_file)
+            if data["type"] == "direct_video":
+                bot.send_video(chat_id, data["file_id"], caption=caption, supports_streaming=True)
+            elif data["type"] == "stream_url":
+                bot.send_video(chat_id, data["url"], caption=caption, supports_streaming=True)
 
         try:
             bot.delete_message(chat_id, status.message_id)
