@@ -1,4 +1,5 @@
 import io
+import os
 import re
 import threading
 import time
@@ -8,7 +9,7 @@ import telebot
 from flask import Flask
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# ---------- Flask Server Setup (For 24/7 Uptime) ----------
+# ---------- Flask Web Server Setup (24/7 Active Server) ----------
 app = Flask("")
 
 
@@ -18,9 +19,6 @@ def home():
 
 
 def run_flask():
-  # Render aur baki hosting platforms PORT environment variable use karte hain
-  import os
-
   port = int(os.environ.get("PORT", 8080))
   app.run(host="0.0.0.0", port=port)
 
@@ -37,7 +35,7 @@ REQUIRED_INSTA_URL = "https://www.instagram.com/__khalnayak___writer?dlrf=NjI1dT
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# ---------- Instaloader ----------
+# ---------- Instaloader Setup ----------
 L = instaloader.Instaloader(
     save_metadata=False,
     download_comments=False,
@@ -45,7 +43,7 @@ L = instaloader.Instaloader(
     quiet=True,
 )
 
-# ---------- Cache Memory ----------
+# ---------- RAM Memory Cache ----------
 CACHE = {}
 CACHE_LIMIT = 25
 
@@ -112,7 +110,7 @@ def fetch_reel_bytes(url):
     return None
 
 
-# ---------- /start & /help Command ----------
+# ---------- /start Command ----------
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(msg):
   markup = InlineKeyboardMarkup()
@@ -154,7 +152,7 @@ def verify_callback(call):
   )
 
 
-# ---------- Link Handler ----------
+# ---------- Reel Link Handler ----------
 @bot.message_handler(func=lambda m: True)
 def handle_link(msg):
   url = (msg.text or "").strip()
@@ -174,7 +172,7 @@ def handle_link(msg):
       " layers...",
   )
 
-  # Quality Menu Buttons
+  # Options Menu
   markup = InlineKeyboardMarkup(row_width=2)
   markup.add(
       InlineKeyboardButton("🎬 1080p HD", callback_data=f"dl|1080|{url}"),
@@ -260,18 +258,16 @@ def process_download(call):
     )
 
 
-# ---------- Server & Bot Initialization ----------
+# ---------- Execution Entry Point ----------
 if __name__ == "__main__":
-  # Start Flask background server
   keep_alive()
 
   print("========================================")
   print("  🖤 INSTAGRAM CINEMATIC BOT ONLINE")
   print("  👑 Owner: Suraj Bhai")
-  print("  ⚡ Flask Web Server Started (24/7 Active)")
+  print("  ⚡ Flask Web Server Active (24/7 Service)")
   print("========================================")
 
-  # Infinite Polling Loop
   while True:
     try:
       bot.infinity_polling(
@@ -279,5 +275,4 @@ if __name__ == "__main__":
       )
     except Exception as e:
       print(f"⚠️ Connection error: {e}")
-      print("🔄 Restarting polling in 3 seconds...")
       time.sleep(3)
