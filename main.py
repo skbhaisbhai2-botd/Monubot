@@ -18,7 +18,7 @@ def home():
     return "Bot Active 24/7 - Powered by Suraj Bhai"
 
 # ----------------- BOT CONFIGURATION -----------------
-BOT_TOKEN = "7909386377:AAH0p1XN5f3sTz8u638X5xNf048s9eS8kU0"  # Aapka naya token
+BOT_TOKEN = "8668169018:AAGDD8Oq3DR0RZbnwjWM_n20iPw41BkW614"  # Aapka naya token
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
 L = instaloader.Instaloader(
