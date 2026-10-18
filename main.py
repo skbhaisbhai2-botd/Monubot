@@ -9,13 +9,13 @@ import telebot
 from flask import Flask
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-# ---------- Flask Web Server Setup (24/7 Active Server) ----------
+# ---------- Flask Web Server (24/7 Uptime) ----------
 app = Flask("")
 
 
 @app.route("/")
 def home():
-  return "<b>🤖 Bot is Active 24/7! (Owner: Suraj Bhai)</b>"
+  return "<b>🤖 Suraj Bhai Bot is Active 24/7!</b>"
 
 
 def run_flask():
@@ -152,7 +152,7 @@ def verify_callback(call):
   )
 
 
-# ---------- Reel Link Handler ----------
+# ---------- Instant Link Handler (No Lag) ----------
 @bot.message_handler(func=lambda m: True)
 def handle_link(msg):
   url = (msg.text or "").strip()
@@ -166,13 +166,7 @@ def handle_link(msg):
     )
     return
 
-  status = bot.reply_to(
-      msg,
-      "⚡ <b>Processing Request...</b>\n🔍 Optimizing face smoothness & HD"
-      " layers...",
-  )
-
-  # Options Menu
+  # Turant Options Menu dikhayega bina kisi processing delay ke
   markup = InlineKeyboardMarkup(row_width=2)
   markup.add(
       InlineKeyboardButton("🎬 1080p HD", callback_data=f"dl|1080|{url}"),
@@ -185,22 +179,17 @@ def handle_link(msg):
       ),
   )
 
-  try:
-    bot.edit_message_text(
-        "🎛️ <b>SELECT YOUR DOWNLOAD QUALITY:</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "✨ <i>Advanced enhancements enabled (Face Clean, Deep Dark RGB"
-        " tones).</i>\n\n"
-        "👑 <b>Owner: Suraj Bhai</b>",
-        msg.chat.id,
-        status.message_id,
-        reply_markup=markup,
-    )
-  except Exception:
-    pass
+  text = (
+      "🎛️ <b>SELECT YOUR DOWNLOAD QUALITY:</b>\n"
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+      "✨ <i>Advanced enhancements enabled (Face Clean, Deep Dark RGB"
+      " tones).</i>\n\n"
+      "👑 <b>Owner: Suraj Bhai</b>"
+  )
+  bot.reply_to(msg, text, reply_markup=markup)
 
 
-# ---------- Callback Download Processing ----------
+# ---------- Callback Download Processing (Jab button dabega) ----------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("dl|"))
 def process_download(call):
   data_parts = call.data.split("|", 2)
