@@ -151,34 +151,39 @@ def verify_callback(call):
   )
 
 
-# ---------- Universal Instagram Link Handler ----------
-@bot.message_handler(
-    func=lambda m: m.text and "instagram.com" in m.text.lower()
-)
-def handle_link(msg):
-  url = msg.text.strip()
+# ---------- Universal Instant Link Handler ----------
+@bot.message_handler(func=lambda m: True)
+def handle_all_messages(msg):
+  text_content = msg.text or msg.caption or ""
 
-  # Direct options buttons open in 1 second
-  markup = InlineKeyboardMarkup(row_width=2)
-  markup.add(
-      InlineKeyboardButton("🎬 1080p HD", callback_data=f"dl|1080|{url}"),
-      InlineKeyboardButton(
-          "🔥 1800p 4K Cinematic", callback_data=f"dl|1800|{url}"
-      ),
-      InlineKeyboardButton("🎵 MP3 Audio Only", callback_data=f"dl|mp3|{url}"),
-      InlineKeyboardButton(
-          "💎 Pro Max HD (Ultra)", callback_data=f"dl|promax|{url}"
-      ),
-  )
+  # Agar start command ya verification hai toh ignore karo
+  if text_content.startswith("/"):
+    return
 
-  text = (
-      "🎛️ <b>SELECT YOUR DOWNLOAD QUALITY:</b>\n"
-      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-      "✨ <i>Advanced enhancements enabled (Face Clean, Deep Dark RGB"
-      " tones).</i>\n\n"
-      "👑 <b>Owner: Suraj Bhai</b>"
-  )
-  bot.reply_to(msg, text, reply_markup=markup)
+  if "instagram.com" in text_content.lower():
+    url = text_content.strip()
+
+    # Ek second me saare buttons khul jayenge
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("🎬 1080p HD", callback_data=f"dl|1080|{url}"),
+        InlineKeyboardButton(
+            "🔥 1800p 4K Cinematic", callback_data=f"dl|1800|{url}"
+        ),
+        InlineKeyboardButton("🎵 MP3 Audio Only", callback_data=f"dl|mp3|{url}"),
+        InlineKeyboardButton(
+            "💎 Pro Max HD (Ultra)", callback_data=f"dl|promax|{url}"
+        ),
+    )
+
+    text = (
+        "🎛️ <b>SELECT YOUR DOWNLOAD QUALITY:</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "✨ <i>Advanced enhancements enabled (Face Clean, Deep Dark RGB"
+        " tones).</i>\n\n"
+        "👑 <b>Owner: Suraj Bhai</b>"
+    )
+    bot.reply_to(msg, text, reply_markup=markup)
 
 
 # ---------- Callback Download Processing ----------
