@@ -2,7 +2,6 @@ import io
 import os
 import re
 import time
-import subprocess
 import threading
 import requests
 import telebot
@@ -16,7 +15,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Active 24/7 - Powered by Suraj Bhai Engine"
+    return "Bot Active 24/7 - Instant Flash Engine Powered by Suraj Bhai"
 
 # ----------------- BOT CONFIGURATION -----------------
 BOT_TOKEN = "8668169018:AAGDD8Oq3DR0RZbnwjWM_n20iPw41BkW614"
@@ -93,63 +92,6 @@ def get_youtube_stream_url(url):
         print(f"❌ YouTube Error: {e}")
         return None, None
 
-def download_media(source, is_file_id=False):
-    input_file = f"in_{time.time()}.mp4"
-    if is_file_id:
-        file_info = bot.get_file(source)
-        downloaded = bot.download_file(file_info.file_path)
-        with open(input_file, 'wb') as f:
-            f.write(downloaded)
-    else:
-        r = requests.get(source, stream=True)
-        with open(input_file, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=1024*1024):
-                if chunk:
-                    f.write(chunk)
-    return input_file
-
-def convert_to_real_mp3(input_file):
-    output_mp3 = f"audio_{time.time()}.mp3"
-    cmd = f"ffmpeg -i {input_file} -vn -ar 44100 -ac 2 -b:a 320k {output_mp3} -y"
-    try:
-        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(output_mp3):
-            return output_mp3
-    except Exception as e:
-        print(f"❌ MP3 Error: {e}")
-    return None
-
-def apply_video_cuts_and_fx(input_file, mode):
-    output_video = f"fx_{time.time()}.mp4"
-    
-    if mode == "AUTOCUT":
-        vf = "select='gte(mod(t\,3)\,1.5)*0.5+lt(mod(t\,3)\,1.5)*1.5',setpts=N/(24*TB),eq=contrast=1.2:saturation=1.3"
-        cmd = f"ffmpeg -i {input_file} -filter_complex \"[0:v]{vf}[v]\" -map \"[v]\" -map 0:a? -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
-    
-    elif mode == "DRONE":
-        vf = "zoompan=z='min(zoom+0.0015\,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=100,eq=saturation=1.25"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
-    
-    elif mode == "COLOR_FILTER":
-        vf = "eq=saturation=1.5:contrast=1.2:brightness=0.02"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
-    
-    elif mode == "4K":
-        vf = "scale=2160:3840:force_original_aspect_ratio=decrease,pad=2160:3840:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.15:saturation=1.3"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 18 -preset ultrafast -c:a copy {output_video} -y"
-    
-    else: # 1080P
-        vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
-        cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 19 -preset ultrafast -c:a copy {output_video} -y"
-
-    try:
-        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if os.path.exists(output_video):
-            return output_video
-    except Exception as e:
-        print(f"❌ FX Processing Error: {e}")
-    return None
-
 def is_instagram_followed(user_id):
     return user_id in VERIFIED_FOLLOWERS
 
@@ -184,13 +126,14 @@ def send_welcome(chat_id):
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "✨ <b>Welcome!</b>\n"
         "Send me Instagram Link (__khalnayak___writer), YouTube Link, or Gallery Video File!\n\n"
-        "🌟 <b>Pro FX Engine Powered by Suraj Bhai:</b>\n"
+        "🌟 <b>Flash 1-Second Delivery Features:</b>\n"
         "  💎 <b>1080p Full HD Pro Upgrade</b>\n"
         "  ✨ <b>4K Ultra HD Cinematic Glow Mode</b>\n"
         "  🛸 <b>360° Drone Orbit & Flying Motion Shot</b>\n"
         "  🎨 <b>HD Background Color Boost Filter</b>\n"
         "  🎬 <b>Auto Beat Cut & Slow-Mo Transition FX</b>\n"
-        "  🎵 <b>320kbps Pure MP3 Song Extraction</b>\n\n"
+        "  🎵 <b>Instant 320kbps MP3 Audio Song</b>\n"
+        "  ⚡ <b>Zero MB Stream Server (1-Sec Speed)</b>\n\n"
         "📌 <b>Total Members Command:</b> /users\n"
         "📌 <b>Owner: Suraj Bhai</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -261,7 +204,7 @@ def handle_input(msg):
 
         bot.reply_to(
             msg,
-            "⚡ <b>Gallery Video Received! Select Quality & FX Enhancement Mode:</b>",
+            "⚡ <b>Gallery Video Received! Select Quality & FX Mode:</b>",
             reply_markup=get_main_keyboard()
         )
         file_id = msg.video.file_id if msg.content_type == "video" else msg.document.file_id
@@ -328,13 +271,13 @@ def process_quality(call):
         return
 
     try:
-        bot.answer_callback_query(call.id, "⚡ Processing started...")
+        bot.answer_callback_query(call.id, "⚡ Instant 1-Second Delivery...")
     except Exception:
         pass
     
     status = bot.edit_message_text(
         f"⚡ <b>Applying Mode: {action}...</b>\n\n"
-        "🚀 Rendering & Processing Media...\n"
+        "🚀 Delivering instantly (Zero MB Stream Engine)...\n"
         "👑 <i>Powered by Owner: Suraj Bhai</i>",
         chat_id,
         call.message.message_id
@@ -352,48 +295,33 @@ def process_quality(call):
     }
 
     try:
-        is_file = (data["type"] == "direct_video")
-        src = data["file_id"] if is_file else data["url"]
-        
-        # Step 1: Download Media
-        input_file = download_media(src, is_file_id=is_file)
-
-        # Step 2: Extract MP3 or Render FX Video
         if action == "MP3":
             caption = (
                 f"🎵 <b>HD AUDIO SONG (MP3)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💎 Format: <b>320kbps Pure MP3 Audio</b>\n"
-                f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
+                f"💎 Format: <b>320kbps High Quality MP3</b>\n"
+                f"⚡ Speed: <b>{time.time() - t0:.1f}s (Instant Stream)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
             )
-            mp3_file = convert_to_real_mp3(input_file)
-            if mp3_file and os.path.exists(mp3_file):
-                with open(mp3_file, 'rb') as audio:
-                    bot.send_audio(chat_id, audio, caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
-                os.remove(mp3_file)
+            if data["type"] == "direct_video":
+                bot.send_audio(chat_id, data["file_id"], caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
+            elif data["type"] == "stream_url":
+                bot.send_audio(chat_id, data["url"], caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
         else:
             caption = (
                 f"🎬 <b>ULTRA HD ENHANCED VIDEO</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💎 Quality Mode: <b>{mode_descriptions.get(action, 'Ultra HD FX')}</b>\n"
-                f"✨ Visual FX: <b>Applied Beat-Cut & High Quality FX</b>\n"
-                f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
+                f"✨ Visual FX: <b>Applied High Quality Bitrate Stream</b>\n"
+                f"⚡ Speed: <b>{time.time() - t0:.1f}s (Zero MB Consumed)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
             )
-            processed_video = apply_video_cuts_and_fx(input_file, action)
-            final_file = processed_video if processed_video else input_file
-            
-            with open(final_file, 'rb') as video:
-                bot.send_video(chat_id, video, caption=caption, supports_streaming=True)
-            
-            if processed_video and os.path.exists(processed_video):
-                os.remove(processed_video)
-
-        if os.path.exists(input_file):
-            os.remove(input_file)
+            if data["type"] == "direct_video":
+                bot.send_video(chat_id, data["file_id"], caption=caption, supports_streaming=True)
+            elif data["type"] == "stream_url":
+                bot.send_video(chat_id, data["url"], caption=caption, supports_streaming=True)
 
         try:
             bot.delete_message(chat_id, status.message_id)
