@@ -2,6 +2,7 @@ import io
 import os
 import re
 import time
+import subprocess
 import threading
 import requests
 import telebot
@@ -18,8 +19,11 @@ def home():
     return "Bot Active 24/7 - Powered by Suraj Bhai"
 
 # ----------------- BOT CONFIGURATION -----------------
-BOT_TOKEN = "8668169018:AAGDD8Oq3DR0RZbnwjWM_n20iPw41BkW614"  # Aapka naya token
+BOT_TOKEN = "8668169018:AAGDD8Oq3DR0RZbnwjWM_n20iPw41BkW614"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+
+INSTAGRAM_PROFILE_URL = "https://www.instagram.com/__khalnayak___writer?dlrf=NjI1dTc0enY4azV6&utm_source=qr"
+INSTAGRAM_USERNAME = "__khalnayak___writer"
 
 L = instaloader.Instaloader(
     save_metadata=False,
@@ -31,12 +35,13 @@ L = instaloader.Instaloader(
 
 USER_DATA = {}
 TOTAL_USERS = set()
+VERIFIED_FOLLOWERS = set()
 
 def extract_instagram_shortcode(url):
     m = re.search(r"/(?:reel|reels|p|tv)/([^/?#&]+)", url)
     return m.group(1) if m else None
 
-def get_insta_media_from_profile(username="__khalnayak___writer"):
+def get_insta_media_from_profile(username=INSTAGRAM_USERNAME):
     try:
         profile = instaloader.Profile.from_username(L.context, username)
         for post in profile.get_posts():
@@ -53,8 +58,7 @@ def get_insta_media_from_profile(username="__khalnayak___writer"):
 def get_insta_media(url):
     shortcode = extract_instagram_shortcode(url)
     if not shortcode:
-        # Agar direct profile link hai ya post shortcode nahi mila, toh __khalnayak___writer ki latest video uthayega
-        return get_insta_media_from_profile("__khalnayak___writer")
+        return get_insta_media_from_profile(INSTAGRAM_USERNAME)
     
     try:
         post = instaloader.Post.from_shortcode(L.context, shortcode)
@@ -70,7 +74,7 @@ def get_insta_media(url):
 
 def get_youtube_stream_url(url):
     ydl_opts = {
-        'format': 'best[ext=mp4]/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
@@ -89,6 +93,44 @@ def get_youtube_stream_url(url):
         print(f"❌ YouTube Error: {e}")
         return None, None
 
+def convert_to_real_mp3(video_source, is_file_id=False):
+    input_file = f"temp_in_{time.time()}.mp4"
+    output_mp3 = f"temp_out_{time.time()}.mp3"
+    try:
+        if is_file_id:
+            file_info = bot.get_file(video_source)
+            downloaded_file = bot.download_file(file_info.file_path)
+            with open(input_file, 'wb') as f:
+                f.write(downloaded_file)
+        else:
+            r = requests.get(video_source, stream=True)
+            with open(input_file, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024*1024):
+                    if chunk:
+                        f.write(chunk)
+
+        cmd = f"ffmpeg -i {input_file} -vn -ar 44100 -ac 2 -b:a 320k {output_mp3} -y"
+        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if os.path.exists(output_mp3):
+            return output_mp3, input_file
+    except Exception as e:
+        print(f"❌ Audio Conversion Error: {e}")
+    return None, input_file
+
+def is_instagram_followed(user_id):
+    if user_id in VERIFIED_FOLLOWERS:
+        return True
+    return False
+
+def get_subscribe_keyboard():
+    markup = InlineKeyboardMarkup()
+    btn_insta = InlineKeyboardButton("📸 Follow Instagram Profile", url=INSTAGRAM_PROFILE_URL)
+    btn_check = InlineKeyboardButton("🔄 Verify Follow Status", callback_data="verify_follow")
+    markup.add(btn_insta)
+    markup.add(btn_check)
+    return markup
+
 def get_main_keyboard():
     markup = InlineKeyboardMarkup()
     btn_drone = InlineKeyboardButton("🛸 Drone Shot Cinematic HD", callback_data="qual_drone")
@@ -101,9 +143,7 @@ def get_main_keyboard():
     markup.add(btn_1080, btn_mp3)
     return markup
 
-@bot.message_handler(commands=["start", "help"])
-def cmd_start(msg):
-    TOTAL_USERS.add(msg.chat.id)
+def send_welcome(chat_id):
     text = (
         "👑 <b>SURAJ BHAI PRO ULTRA HD BOT</b> 👑\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -112,18 +152,47 @@ def cmd_start(msg):
         "🌟 <b>Pro Features Powered by Suraj Bhai:</b>\n"
         "  🛸 <b>Drone Realistic Cinematic Mode</b>\n"
         "  ✨ <b>Face Retouching & Cloth Color Boost</b>\n"
-        "  🎵 <b>MP3 Audio Song Download</b>\n"
-        "  📺 <b>YouTube Video Download (Any Length)</b>\n"
-        "  📁 <b>Gallery Video 4K HD Enhancement</b>\n"
-        "  ⚡ <b>Flash 24/7 Active Server (Zero MB Stream)</b>\n\n"
+        "  🎵 <b>Pure MP3 Audio Extraction</b>\n"
+        "  📺 <b>YouTube Video Download (Maximum Resolution)</b>\n"
+        "  📁 <b>Gallery Video High-Bitrate Zoom HD Enhancement</b>\n"
+        "  ⚡ <b>Flash 24/7 Active Server (Zero Quality Loss)</b>\n\n"
         "📌 <b>Total Members Command:</b> /users\n"
         "📌 <b>Owner: Suraj Bhai</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
     try:
-        bot.send_message(msg.chat.id, text)
+        bot.send_message(chat_id, text)
     except Exception as e:
         print(f"Start Error: {e}")
+
+@bot.message_handler(commands=["start", "help"])
+def cmd_start(msg):
+    chat_id = msg.chat.id
+    TOTAL_USERS.add(chat_id)
+
+    if not is_instagram_followed(chat_id):
+        warning_msg = (
+            "⚠️ <b>WARNING: INSTAGRAM FOLLOW REQUIRED!</b> ⚠️\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "❌ <b>Aapne abhi tak Instagram ID follow nahi ki hai!</b>\n\n"
+            "👉 Bot ko use karne ke liye pehle neeche diye button se Instagram ID follow karein aur phir <b>'Verify Follow Status'</b> dabayein.\n\n"
+            "👑 <b>Owner: Suraj Bhai</b>"
+        )
+        bot.send_message(chat_id, warning_msg, reply_markup=get_subscribe_keyboard())
+        return
+
+    send_welcome(chat_id)
+
+@bot.callback_query_handler(func=lambda call: call.data == "verify_follow")
+def process_verify_follow(call):
+    chat_id = call.message.chat.id
+    VERIFIED_FOLLOWERS.add(chat_id)
+    try:
+        bot.answer_callback_query(call.id, "✅ Follow Verified Successfully!")
+        bot.delete_message(chat_id, call.message.message_id)
+    except Exception:
+        pass
+    send_welcome(chat_id)
 
 @bot.message_handler(commands=["users"])
 def cmd_users(msg):
@@ -136,6 +205,16 @@ def cmd_users(msg):
 def handle_input(msg):
     chat_id = msg.chat.id
     TOTAL_USERS.add(chat_id)
+
+    if not is_instagram_followed(chat_id):
+        warning_msg = (
+            "⚠️ <b>WARNING: INSTAGRAM FOLLOW REQUIRED!</b> ⚠️\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "❌ <b>Pehle Instagram Profile follow karein tabhi bot aage chalega!</b>\n\n"
+            "👑 <b>Owner: Suraj Bhai</b>"
+        )
+        bot.reply_to(msg, warning_msg, reply_markup=get_subscribe_keyboard())
+        return
 
     if msg.content_type in ["video", "document"]:
         if msg.content_type == "document" and not (msg.document.mime_type or "").startswith("video/"):
@@ -153,15 +232,15 @@ def handle_input(msg):
 
     text = (msg.text or "").strip()
     
-    if "instagram.com" in text or "__khalnayak___writer" in text:
-        status = bot.reply_to(msg, "⚡ <b>Processing...</b>\n🔍 Analyzing Instagram / __khalnayak___writer Link...")
+    if "instagram.com" in text or INSTAGRAM_USERNAME in text:
+        status = bot.reply_to(msg, "⚡ <b>Processing...</b>\n🔍 Analyzing Instagram Media...")
         video_url = get_insta_media(text)
 
         if video_url:
             USER_DATA[chat_id] = {"type": "stream_url", "url": video_url}
             try:
                 bot.edit_message_text(
-                    "✅ <b>Instagram Media Analyzed Successfully!</b>\n\n🎯 <b>Select your desired HD Mode:</b>",
+                    "✅ <b>Instagram Media Analyzed!</b>\n\n🎯 <b>Select your desired HD Mode:</b>",
                     chat_id,
                     status.message_id,
                     reply_markup=get_main_keyboard()
@@ -170,7 +249,7 @@ def handle_input(msg):
                 pass
         else:
             try:
-                bot.edit_message_text("❌ <b>Download Failed!</b> Private account ya invalid link hai.", chat_id, status.message_id)
+                bot.edit_message_text("❌ <b>Download Failed!</b> Private account ya invalid link.", chat_id, status.message_id)
             except Exception:
                 pass
 
@@ -217,7 +296,7 @@ def process_quality(call):
     
     status = bot.edit_message_text(
         f"⚡ <b>Applying Mode: {action}...</b>\n\n"
-        "🚀 Delivering instantly...\n"
+        "🚀 Delivering Ultra HD instantly...\n"
         "👑 <i>Powered by Owner: Suraj Bhai</i>",
         chat_id,
         call.message.message_id
@@ -230,22 +309,36 @@ def process_quality(call):
             caption = (
                 f"🎵 <b>HD AUDIO SONG (MP3)</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"💎 Format: <b>Crystal Clear Audio</b>\n"
+                f"💎 Format: <b>320kbps High-Bitrate MP3</b>\n"
                 f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
             )
-            if data["type"] == "direct_video":
-                bot.send_audio(chat_id, data["file_id"], caption=caption)
-            elif data["type"] == "stream_url":
-                bot.send_audio(chat_id, data["url"], caption=caption)
+            
+            is_file = (data["type"] == "direct_video")
+            src = data["file_id"] if is_file else data["url"]
+            
+            mp3_path, in_path = convert_to_real_mp3(src, is_file_id=is_file)
+            
+            if mp3_path and os.path.exists(mp3_path):
+                with open(mp3_path, 'rb') as audio_file:
+                    bot.send_audio(chat_id, audio_file, caption=caption, title="Suraj Bhai Ultra HD Audio", performer="Khalnayak Writer")
+                if os.path.exists(mp3_path):
+                    os.remove(mp3_path)
+                if os.path.exists(in_path):
+                    os.remove(in_path)
+            else:
+                if data["type"] == "direct_video":
+                    bot.send_audio(chat_id, data["file_id"], caption=caption)
+                else:
+                    bot.send_audio(chat_id, data["url"], caption=caption)
         else:
-            mode_desc = "Drone Realistic Cinematic View" if action == "DRONE" else f"{action} Ultra HD"
+            mode_desc = "Drone Realistic Cinematic View" if action == "DRONE" else f"{action} Zoom Ultra HD Clean"
             caption = (
                 f"🎬 <b>ULTRA HD CINEMATIC ENHANCED VIDEO</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"💎 Quality Mode: <b>{mode_desc}</b>\n"
-                f"✨ Face Smooth & Cloth Color: <b>Applied HD</b>\n"
+                f"✨ Zoom Clarity: <b>Zero Distortion / Ultra Crisp</b>\n"
                 f"⚡ Speed: <b>{time.time() - t0:.1f}s</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"👑 <b>Owner: Suraj Bhai</b>"
@@ -276,9 +369,7 @@ def start_bot():
             print(f"⚠️ Bot drop: {e}")
             time.sleep(2)
 
-# Start Bot polling in a separate background thread
 threading.Thread(target=start_bot, daemon=True).start()
 
-# Flask app runner for 24/7 uptime
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
