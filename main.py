@@ -122,22 +122,18 @@ def convert_to_real_mp3(input_file):
 def apply_video_cuts_and_fx(input_file, mode):
     output_video = f"fx_{time.time()}.mp4"
     
-    # Auto-Cut / Slow Motion Effect Engine
     if mode == "AUTOCUT":
         vf = "select='gte(mod(t\,3)\,1.5)*0.5+lt(mod(t\,3)\,1.5)*1.5',setpts=N/(24*TB),eq=contrast=1.2:saturation=1.3"
         cmd = f"ffmpeg -i {input_file} -filter_complex \"[0:v]{vf}[v]\" -map \"[v]\" -map 0:a? -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
     
-    # 360 Drone Motion Shot
     elif mode == "DRONE":
         vf = "zoompan=z='min(zoom+0.0015\,1.2)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=100,eq=saturation=1.25"
         cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
     
-    # Color Boost Filter
     elif mode == "COLOR_FILTER":
         vf = "eq=saturation=1.5:contrast=1.2:brightness=0.02"
         cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 20 -preset ultrafast -c:a copy {output_video} -y"
     
-    # 4K & 1080P HD Scale
     elif mode == "4K":
         vf = "scale=2160:3840:force_original_aspect_ratio=decrease,pad=2160:3840:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.15:saturation=1.3"
         cmd = f"ffmpeg -i {input_file} -vf \"{vf}\" -c:v libx264 -crf 18 -preset ultrafast -c:a copy {output_video} -y"
@@ -200,7 +196,7 @@ def send_welcome(chat_id):
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
     try:
-        bot.send_message(chat_id, text)
+        bot.send_message(chat_id, text, disable_web_page_preview=True)
     except Exception as e:
         print(f"Start Error: {e}")
 
@@ -216,9 +212,10 @@ def cmd_start(msg):
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "❌ <b>Aapne abhi tak Instagram ID follow nahi ki hai!</b>\n\n"
             "👉 Bot ko use karne ke liye pehle neeche diye button se Instagram ID follow karein aur phir <b>'Verify Follow Status'</b> dabayein.\n\n"
+            "📸 <b>Instagram Profile:</b> <a href='" + INSTAGRAM_PROFILE_URL + "'>__khalnayak___writer</a>\n"
             "👑 <b>Owner: Suraj Bhai</b>"
         )
-        bot.send_message(chat_id, warning_msg, reply_markup=get_subscribe_keyboard())
+        bot.send_message(chat_id, warning_msg, reply_markup=get_subscribe_keyboard(), disable_web_page_preview=True)
         return
 
     send_welcome(chat_id)
@@ -251,9 +248,10 @@ def handle_input(msg):
             "⚠️ <b>WARNING: INSTAGRAM FOLLOW REQUIRED!</b> ⚠️\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "❌ <b>Pehle Instagram Profile follow karein tabhi bot aage chalega!</b>\n\n"
+            "📸 <b>Instagram Profile:</b> <a href='" + INSTAGRAM_PROFILE_URL + "'>__khalnayak___writer</a>\n"
             "👑 <b>Owner: Suraj Bhai</b>"
         )
-        bot.reply_to(msg, warning_msg, reply_markup=get_subscribe_keyboard())
+        bot.reply_to(msg, warning_msg, reply_markup=get_subscribe_keyboard(), disable_web_page_preview=True)
         return
 
     if msg.content_type in ["video", "document"]:
@@ -357,10 +355,10 @@ def process_quality(call):
         is_file = (data["type"] == "direct_video")
         src = data["file_id"] if is_file else data["url"]
         
-        # Step 1: Source File Download
+        # Step 1: Download Media
         input_file = download_media(src, is_file_id=is_file)
 
-        # Step 2: Processing based on user request
+        # Step 2: Extract MP3 or Render FX Video
         if action == "MP3":
             caption = (
                 f"🎵 <b>HD AUDIO SONG (MP3)</b>\n"
