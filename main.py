@@ -35,7 +35,7 @@ REQUIRED_INSTA_URL = "https://www.instagram.com/__khalnayak___writer?dlrf=NjI1dT
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# ---------- Instaloader Setup ----------
+# Instaloader
 L = instaloader.Instaloader(
     save_metadata=False,
     download_comments=False,
@@ -43,7 +43,6 @@ L = instaloader.Instaloader(
     quiet=True,
 )
 
-# ---------- RAM Memory Cache ----------
 CACHE = {}
 CACHE_LIMIT = 25
 
@@ -152,21 +151,14 @@ def verify_callback(call):
   )
 
 
-# ---------- Instant Link Handler (No Lag) ----------
-@bot.message_handler(func=lambda m: True)
+# ---------- Universal Instagram Link Handler ----------
+@bot.message_handler(
+    func=lambda m: m.text and "instagram.com" in m.text.lower()
+)
 def handle_link(msg):
-  url = (msg.text or "").strip()
+  url = msg.text.strip()
 
-  if "instagram.com" not in url:
-    bot.reply_to(
-        msg,
-        "❌ <b>Invalid Link Structure</b>\n\n"
-        "💡 Please provide a legitimate Instagram link.\n"
-        "👑 <i>Suraj Bhai Production</i>",
-    )
-    return
-
-  # Turant Options Menu dikhayega bina kisi processing delay ke
+  # Direct options buttons open in 1 second
   markup = InlineKeyboardMarkup(row_width=2)
   markup.add(
       InlineKeyboardButton("🎬 1080p HD", callback_data=f"dl|1080|{url}"),
@@ -189,7 +181,7 @@ def handle_link(msg):
   bot.reply_to(msg, text, reply_markup=markup)
 
 
-# ---------- Callback Download Processing (Jab button dabega) ----------
+# ---------- Callback Download Processing ----------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("dl|"))
 def process_download(call):
   data_parts = call.data.split("|", 2)
@@ -247,14 +239,13 @@ def process_download(call):
     )
 
 
-# ---------- Execution Entry Point ----------
+# ---------- Entry Point ----------
 if __name__ == "__main__":
   keep_alive()
 
   print("========================================")
   print("  🖤 INSTAGRAM CINEMATIC BOT ONLINE")
   print("  👑 Owner: Suraj Bhai")
-  print("  ⚡ Flask Web Server Active (24/7 Service)")
   print("========================================")
 
   while True:
