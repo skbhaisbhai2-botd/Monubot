@@ -357,7 +357,7 @@ async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"• ⌨️ Kᴇʏʙᴏᴀʀᴅ & Cᴏᴘʏ Bʟᴏᴄᴋ\n"
                 f"• 🌐 Eᴍᴏᴊɪ-Hᴇx Pᴀʏʟᴏᴀᴅ\n"
                 f"• 🛡️ PBKDF2 Hᴀsʜ Dᴇʀɪᴠᴀᴛɪᴏɴ\n\n"
-                f"👑 Yᴏᴜʀ ᴄᴏᴅᴇ ɪs ɴᴏᴡ 100% ᴘʀᴏᴛᴇᴄᴛᴇᴅ!"
+                f"👑 Yᴏᴜʀ cᴏᴅᴇ ɪs ɴᴏᴡ 100% pʀᴏᴛᴇᴄᴛᴇᴅ!"
             ),
             parse_mode="HTML"
         )
