@@ -19,7 +19,7 @@ from telegram.ext import (
 )
 
 # ======================== CONFIG ========================
-BOT_TOKEN = "9116537219:AAGYevPHlV0uaE7LaRwzzjBY1Qlq14XgA5w"
+BOT_TOKEN = "9248131487:AAFU9cy1CySIDXyxzoFEXDBMInkvO6VS3wc"
 
 # ======================== LOGGING ========================
 logging.basicConfig(
@@ -83,14 +83,14 @@ def generate_secure_password() -> str:
 
 
 def create_encrypted_html(emoji_payload: str) -> str:
-    html_template = f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Secured HTML File</title>
     <style>
-        body {{
+        body {
             background: #0f172a;
             color: #f8fafc;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -100,8 +100,8 @@ def create_encrypted_html(emoji_payload: str) -> str:
             height: 100vh;
             margin: 0;
             overflow: hidden;
-        }}
-        .auth-container {{
+        }
+        .auth-container {
             background: #1e293b;
             padding: 35px 30px;
             border-radius: 16px;
@@ -109,10 +109,10 @@ def create_encrypted_html(emoji_payload: str) -> str:
             text-align: center;
             width: 340px;
             border: 1px solid #334155;
-        }}
-        h2 {{ margin-bottom: 10px; color: #38bdf8; font-size: 22px; }}
-        p {{ color: #94a3b8; font-size: 14px; margin-bottom: 20px; }}
-        input {{
+        }
+        h2 { margin-bottom: 10px; color: #38bdf8; font-size: 22px; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+        input {
             width: 100%;
             padding: 12px 15px;
             margin-bottom: 15px;
@@ -124,9 +124,9 @@ def create_encrypted_html(emoji_payload: str) -> str:
             font-size: 16px;
             outline: none;
             transition: border-color 0.2s;
-        }}
-        input:focus {{ border-color: #38bdf8; }}
-        button {{
+        }
+        input:focus { border-color: #38bdf8; }
+        button {
             background: #2563eb;
             color: white;
             border: none;
@@ -137,9 +137,9 @@ def create_encrypted_html(emoji_payload: str) -> str:
             font-size: 16px;
             font-weight: bold;
             transition: background 0.2s;
-        }}
-        button:hover {{ background: #1d4ed8; }}
-        #error {{ color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }}
+        }
+        button:hover { background: #1d4ed8; }
+        #error { color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }
     </style>
 </head>
 <body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
@@ -152,52 +152,52 @@ def create_encrypted_html(emoji_payload: str) -> str:
     </div>
 
     <script>
-        const emojiMap = {{
+        const emojiMap = {
             '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3',
             '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7',
             '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b',
             '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f'
-        }};
+        };
 
-        function emojisToHex(emojiStr) {{
+        function emojisToHex(emojiStr) {
             let hex = '';
-            for (let char of emojiStr) {{
-                if (emojiMap[char] !== undefined) {{
+            for (let char of emojiStr) {
+                if (emojiMap[char] !== undefined) {
                     hex += emojiMap[char];
-                }}
-            }}
+                }
+            }
             return hex;
-        }}
+        }
 
-        function hexToBytes(hex) {{
+        function hexToBytes(hex) {
             let bytes = new Uint8Array(hex.length / 2);
-            for (let i = 0; i < hex.length; i += 2) {{
+            for (let i = 0; i < hex.length; i += 2) {
                 bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-            }}
+            }
             return bytes;
-        }}
+        }
 
-        document.addEventListener('keydown', function(e) {{
+        document.addEventListener('keydown', function(e) {
             if (e.key === 'F12' || 
                 (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
-                (e.ctrlKey && e.key === 'u')) {{
+                (e.ctrlKey && e.key === 'u')) {
                 e.preventDefault();
                 return false;
-            }}
-        }});
+            }
+        });
 
-        async function unlockContent() {{
+        async function unlockContent() {
             const password = document.getElementById('passwordInput').value;
             const errorDiv = document.getElementById('error');
             
-            if (!password) {{
+            if (!password) {
                 errorDiv.innerText = "⚠️ Please enter the password!";
                 return;
-            }}
+            }
 
-            try {{
+            try {
                 errorDiv.innerText = "⏳ Decrypting...";
-                const emojiPayload = "{emoji_payload}";
+                const emojiPayload = "REPLACE_EMOJI_PAYLOAD";
                 const hexStr = emojisToHex(emojiPayload);
                 const rawData = hexToBytes(hexStr);
 
@@ -207,19 +207,19 @@ def create_encrypted_html(emoji_payload: str) -> str:
 
                 const enc = new TextEncoder();
                 const keyMaterial = await window.crypto.subtle.importKey(
-                    "raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]
+                    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
                 );
                 
                 const key = await window.crypto.subtle.deriveKey(
-                    {{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }},
+                    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
                     keyMaterial,
-                    {{ name: "AES-GCM", length: 256 }},
+                    { name: "AES-GCM", length: 256 },
                     false,
                     ["decrypt"]
                 );
 
                 const decrypted = await window.crypto.subtle.decrypt(
-                    {{ name: "AES-GCM", iv: iv }}, key, ciphertext
+                    { name: "AES-GCM", iv: iv }, key, ciphertext
                 );
 
                 const decoder = new TextDecoder();
@@ -228,18 +228,18 @@ def create_encrypted_html(emoji_payload: str) -> str:
                 document.open();
                 document.write(htmlContent);
                 document.close();
-            } catch (err) {{
+            } catch (err) {
                 errorDiv.innerText = "❌ Incorrect Password!";
-            }}
-        }}
+            }
+        }
 
-        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') unlockContent();
-        }});
+        });
     </script>
 </body>
 </html>"""
-    return html_template
+    return html_template.replace("REPLACE_EMOJI_PAYLOAD", emoji_payload)
 
 
 # ======================== BOT HANDLERS ========================
@@ -251,7 +251,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "• Koi bhi <b>HTML file</b> seedha yahan bhej do!\n"
         "• Bot turant 2 second mein auto-password ke sath encrypt kar dega.\n"
-        "• Poora code **Emojis** mein locked mileगा! 🍎🍌🍒"
+        "• Poora code **Emojis** mein locked milega! 🍎🍌🍒"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -297,7 +297,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Bot Token set करो!")
+        print("❌ ERROR: Bot Token set karo!")
         return
 
     threading.Thread(target=run_health_server, daemon=True).start()
@@ -308,8 +308,6 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
 
     print("🚀 ADITYA RAJPUT Emoji Encryptor Bot Started...")
-    
-    # drop_pending_updates=True lagane se purana conflict error kabhi nahi aayega!
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
