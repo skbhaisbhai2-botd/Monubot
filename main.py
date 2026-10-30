@@ -19,7 +19,7 @@ from telegram.ext import (
 )
 
 # ======================== CONFIG ========================
-BOT_TOKEN = "9248131487:AAFU9cy1CySIDXyxzoFEXDBMInkvO6VS3wc"
+BOT_TOKEN = "9116537219:AAGYevPHlV0uaE7LaRwzzjBY1Qlq14XgA5w"
 
 # ======================== LOGGING ========================
 logging.basicConfig(
@@ -50,7 +50,6 @@ EMOJI_MAP = {
     '8': '🍑', '9': '🥝', 'a': '🥥', 'b': '🍅',
     'c': '🍆', 'd': '🥑', 'e': '🥦', 'f': '🥕'
 }
-REVERSE_EMOJI_MAP = {v: k for k, v in EMOJI_MAP.items()}
 
 def data_to_emojis(data: bytes) -> str:
     hex_str = data.hex()
@@ -84,7 +83,6 @@ def generate_secure_password() -> str:
 
 
 def create_encrypted_html(emoji_payload: str) -> str:
-    """Generate self-decrypting HTML wrapper using Emoji Cipher & Web Crypto API"""
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -179,7 +177,6 @@ def create_encrypted_html(emoji_payload: str) -> str:
             return bytes;
         }}
 
-        // Block Inspect & Shortcuts
         document.addEventListener('keydown', function(e) {{
             if (e.key === 'F12' || 
                 (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
@@ -253,8 +250,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🔐 <b>ADITYA RAJPUT EMOJI ENCRYPTOR</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "• Koi bhi <b>HTML file</b> seedha yahan bhej do!\n"
-        "• Bot turant 2 second mein auto-password ke sath file encrypt kar dega.\n"
-        "• Poora code **Emojis** mein locked milega! 🍎🍌🍒"
+        "• Bot turant 2 second mein auto-password ke sath encrypt kar dega.\n"
+        "• Poora code **Emojis** mein locked mileगा! 🍎🍌🍒"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -269,14 +266,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     original_name = update.message.document.file_name or "file.html"
 
     try:
-        # Auto-generate password and encrypt
         password = generate_secure_password()
         encrypted_bytes = encrypt_data(bytes(file_bytes), password)
-        
-        # Convert encrypted binary data to Emoji Cipher
         emoji_payload = data_to_emojis(encrypted_bytes)
-        
-        # Create final protected HTML wrapper
         html_wrapper = create_encrypted_html(emoji_payload)
         
         enc_name = original_name.rsplit(".", 1)[0] + "_emoji_secured.html"
@@ -305,7 +297,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Bot Token set karo!")
+        print("❌ ERROR: Bot Token set करो!")
         return
 
     threading.Thread(target=run_health_server, daemon=True).start()
@@ -316,7 +308,9 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
 
     print("🚀 ADITYA RAJPUT Emoji Encryptor Bot Started...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # drop_pending_updates=True lagane se purana conflict error kabhi nahi aayega!
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
