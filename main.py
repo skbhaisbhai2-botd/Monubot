@@ -43,7 +43,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive and running!")
     
     def log_message(self, format, *args):
-        pass # Suppress server logs to keep console clean
+        pass
 
 def run_health_server():
     port = int(os.environ.get("PORT", 10000))
@@ -54,7 +54,6 @@ def run_health_server():
 # ======================== CRYPTO FUNCTIONS ========================
 
 def derive_key(password: str, salt: bytes) -> bytes:
-    """PBKDF2-HMAC-SHA256 key derivation"""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -66,7 +65,6 @@ def derive_key(password: str, salt: bytes) -> bytes:
 
 
 def encrypt_data(plaintext: bytes, password: str) -> bytes:
-    """Encrypt with AES-256-GCM"""
     salt = os.urandom(16)
     key = derive_key(password, salt)
     nonce = os.urandom(12)
@@ -76,7 +74,6 @@ def encrypt_data(plaintext: bytes, password: str) -> bytes:
 
 
 def decrypt_data(encrypted: bytes, password: str) -> bytes:
-    """Decrypt AES-256-GCM data"""
     if len(encrypted) < 28:
         raise ValueError("Invalid encrypted data")
     salt = encrypted[:16]
@@ -88,17 +85,17 @@ def decrypt_data(encrypted: bytes, password: str) -> bytes:
 
 
 def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
-    """Generate self-decrypting HTML wrapper with copy & inspect protection"""
+    """Generate self-decrypting HTML wrapper safely using string replacement"""
     enc_b64 = base64.b64encode(encrypted_bytes).decode('utf-8')
     
-    html_template = f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Protected HTML File</title>
     <style>
-        body {{
+        body {
             background: #0f172a;
             color: #f8fafc;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -108,8 +105,8 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
             height: 100vh;
             margin: 0;
             overflow: hidden;
-        }}
-        .auth-container {{
+        }
+        .auth-container {
             background: #1e293b;
             padding: 35px 30px;
             border-radius: 16px;
@@ -117,10 +114,10 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
             text-align: center;
             width: 340px;
             border: 1px solid #334155;
-        }}
-        h2 {{ margin-bottom: 10px; color: #38bdf8; font-size: 22px; }}
-        p {{ color: #94a3b8; font-size: 14px; margin-bottom: 20px; }}
-        input {{
+        }
+        h2 { margin-bottom: 10px; color: #38bdf8; font-size: 22px; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+        input {
             width: 100%;
             padding: 12px 15px;
             margin-bottom: 15px;
@@ -132,9 +129,9 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
             font-size: 16px;
             outline: none;
             transition: border-color 0.2s;
-        }}
-        input:focus {{ border-color: #38bdf8; }}
-        button {{
+        }
+        input:focus { border-color: #38bdf8; }
+        button {
             background: #2563eb;
             color: white;
             border: none;
@@ -145,9 +142,9 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
             font-size: 16px;
             font-weight: bold;
             transition: background 0.2s;
-        }}
-        button:hover {{ background: #1d4ed8; }}
-        #error {{ color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }}
+        }
+        button:hover { background: #1d4ed8; }
+        #error { color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }
     </style>
 </head>
 <body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
@@ -160,47 +157,46 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
     </div>
 
     <script>
-        // Block Inspect, View Source & Shortcuts
-        document.addEventListener('keydown', function(e) {{
+        document.addEventListener('keydown', function(e) {
             if (e.key === 'F12' || 
                 (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
-                (e.ctrlKey && e.key === 'u')) {{
+                (e.ctrlKey && e.key === 'u')) {
                 e.preventDefault();
                 return false;
-            }}
-        }});
+            }
+        });
 
-        async function unlockContent() {{
+        async function unlockContent() {
             const password = document.getElementById('passwordInput').value;
             const errorDiv = document.getElementById('error');
             
-            if (!password) {{
+            if (!password) {
                 errorDiv.innerText = "⚠️ Please enter the password!";
                 return;
-            }}
+            }
 
-            try {{
+            try {
                 errorDiv.innerText = "⏳ Decrypting...";
-                const rawData = Uint8Array.from(atob("{enc_b64}"), c => c.charCodeAt(0));
+                const rawData = Uint8Array.from(atob("REPLACE_B64"), c => c.charCodeAt(0));
                 const salt = rawData.slice(0, 16);
                 const iv = rawData.slice(16, 28);
                 const ciphertext = rawData.slice(28);
 
                 const enc = new TextEncoder();
                 const keyMaterial = await window.crypto.subtle.importKey(
-                    "raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]
+                    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
                 );
                 
                 const key = await window.crypto.subtle.deriveKey(
-                    {{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }},
+                    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
                     keyMaterial,
-                    {{ name: "AES-GCM", length: 256 }},
+                    { name: "AES-GCM", length: 256 },
                     false,
                     ["decrypt"]
                 );
 
                 const decrypted = await window.crypto.subtle.decrypt(
-                    {{ name: "AES-GCM", iv: iv }}, key, ciphertext
+                    { name: "AES-GCM", iv: iv }, key, ciphertext
                 );
 
                 const decoder = new TextDecoder();
@@ -209,19 +205,20 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
                 document.open();
                 document.write(htmlContent);
                 document.close();
-            } catch (err) {{
+            } catch (err) {
                 errorDiv.innerText = "❌ Incorrect Password or Corrupted File!";
-            }}
-        }}
+            }
+        }
 
-        // Allow pressing Enter to submit
-        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') unlockContent();
-        }});
+        });
     </script>
 </body>
 </html>"""
-    return html_template
+    
+    # Safely insert base64 string using replace instead of f-string
+    return html_template.replace("REPLACE_B64", enc_b64)
 
 
 # ======================== BOT HANDLERS ========================
@@ -352,12 +349,12 @@ async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"📁 Fɪʟᴇ: <code>{enc_name}</code>\n"
                 f"📦 Sɪᴢᴇ: {file_size_kb:.1f} KB\n\n"
                 f"🔑 Yᴏᴜʀ Fɪʟᴇ Pᴀssᴡᴏʀᴅ: <code>{password}</code>\n\n"
-                f"🛡️ Pʀᴏᴛᴇᴄᴛᴇᴅ ᴡɪᴛʜ:\n"
+                f"🛡️ Pʀᴏᴛᴇᴄᴛᴇᴅ wɪᴛʜ:\n"
                 f"• 🚫 AES-256-GCM Eɴᴄʀʏᴘᴛɪᴏɴ\n"
                 f"• ⌨️ Kᴇʏʙᴏᴀʀᴅ & Cᴏᴘʏ Bʟᴏᴄᴋ\n"
                 f"• 🌐 Eᴍᴏᴊɪ-Hᴇx Pᴀʏʟᴏᴀᴅ\n"
                 f"• 🛡️ PBKDF2 Hᴀsʜ Dᴇʀɪᴠᴀᴛɪᴏɴ\n\n"
-                f"👑 Yᴏᴜʀ cᴏᴅᴇ ɪs ɴᴏᴡ 100% pʀᴏᴛᴇᴄᴛᴇᴅ!"
+                f"👑 Yᴏᴜʀ cᴏᴅᴇ iꜱ nᴏᴡ 100% pʀᴏᴛᴇᴄᴛᴇᴅ!"
             ),
             parse_mode="HTML"
         )
@@ -426,12 +423,11 @@ def main():
         print("❌ ERROR: Bot Token set करो!")
         return
 
-    # Start the dummy HTTP server in background thread so Render web service passes health check
     threading.Thread(target=run_health_server, daemon=True).start()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
+    conv_handler =ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
             CallbackQueryHandler(button_handler),
