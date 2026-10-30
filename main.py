@@ -217,7 +217,6 @@ def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
 </body>
 </html>"""
     
-    # Safely insert base64 string using replace instead of f-string
     return html_template.replace("REPLACE_B64", enc_b64)
 
 
@@ -274,7 +273,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<b>ENCRYPT:</b>\n"
             "1. ENCRYPT बटन दबाओ\n"
             "2. Password भेजो\n"
-            "3. HTML file भेजो\n"
+            "3. HTML file या Code भेजो\n"
             "4. Secured HTML file मिल जाएगी\n\n"
             "🛡️ Features:\n"
             "• AES-256-GCM Encryption\n"
@@ -295,7 +294,7 @@ async def receive_password_encrypt(update: Update, context: ContextTypes.DEFAULT
     context.user_data["password"] = password
     await update.message.reply_text(
         f"✅ Password set: <code>{password}</code>\n\n"
-        "अब अपनी <b>HTML file</b> भेजो 📄",
+        "अब अपनी <b>HTML file</b> भेजो या HTML code paste करो 📄",
         parse_mode="HTML"
     )
     return WAITING_FILE_ENCRYPT
@@ -317,23 +316,29 @@ async def receive_password_decrypt(update: Update, context: ContextTypes.DEFAULT
 
 
 async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.document:
-        await update.message.reply_text("❌ कृपया एक file भेजो (HTML recommended)")
-        return WAITING_FILE_ENCRYPT
-
     password = context.user_data.get("password")
     if not password:
         await update.message.reply_text("❌ Password missing. /start से शुरू करो।")
         return ConversationHandler.END
 
-    file = await update.message.document.get_file()
-    file_bytes = await file.download_as_bytearray()
+    file_bytes = None
+    original_name = "file.html"
+
+    if update.message.document:
+        file = await update.message.document.get_file()
+        file_bytes = await file.download_as_bytearray()
+        original_name = update.message.document.file_name or "file.html"
+    elif update.message.text:
+        file_bytes = update.message.text.encode('utf-8')
+        original_name = "code.html"
+    else:
+        await update.message.reply_text("❌ कृपया HTML file भेजो या HTML code text में भेजो!")
+        return WAITING_FILE_ENCRYPT
 
     try:
         encrypted_bytes = encrypt_data(bytes(file_bytes), password)
         html_wrapper = create_encrypted_html(encrypted_bytes, password)
         
-        original_name = update.message.document.file_name or "file.html"
         base_name = original_name.rsplit(".", 1)[0]
         if base_name.endswith("_encrypted"):
             enc_name = base_name + ".html"
@@ -349,7 +354,7 @@ async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"📁 Fɪʟᴇ: <code>{enc_name}</code>\n"
                 f"📦 Sɪᴢᴇ: {file_size_kb:.1f} KB\n\n"
                 f"🔑 Yᴏᴜʀ Fɪʟᴇ Pᴀssᴡᴏʀᴅ: <code>{password}</code>\n\n"
-                f"🛡️ Pʀᴏᴛᴇᴄᴛᴇᴅ wɪᴛʜ:\n"
+                f"🛡️ Pʀᴏᴛᴇᴄᴛᴇᴅ ᴡɪᴛʜ:\n"
                 f"• 🚫 AES-256-GCM Eɴᴄʀʏᴘᴛɪᴏɴ\n"
                 f"• ⌨️ Kᴇʏʙᴏᴀʀᴅ & Cᴏᴘʏ Bʟᴏᴄᴋ\n"
                 f"• 🌐 Eᴍᴏᴊɪ-Hᴇx Pᴀʏʟᴏᴀᴅ\n"
@@ -427,7 +432,7 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    conv_handler =ConversationHandler(
+    conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
             CallbackQueryHandler(button_handler),
@@ -440,10 +445,10 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receive_password_decrypt)
             ],
             WAITING_FILE_ENCRYPT: [
-                MessageHandler(filters.Document.ALL, receive_file_encrypt)
+                MessageHandler(filters.Document.ALL | filters.TEXT & ~filters.COMMAND, receive_file_encrypt)
             ],
             WAITING_FILE_DECRYPT: [
-                MessageHandler(filters.Document.ALL, receive_file_decrypt)
+                MessageHandler(filters.Document.ALL & ~filters.COMMAND, receive_file_decrypt)
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
