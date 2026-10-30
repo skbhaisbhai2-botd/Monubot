@@ -1,7 +1,6 @@
 import os
 import io
 import base64
-import hashlib
 import logging
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -19,7 +18,7 @@ from telegram.ext import (
 )
 
 # ======================== CONFIG ========================
-BOT_TOKEN = "9248131487:AAFU9cy1CySIDXyxzoFEXDBMInkvO6VS3wc"          # Bot Token added
+BOT_TOKEN = "9248131487:AAFU9cy1CySIDXyxzoFEXDBMInkvO6VS3wc"
 
 # Conversation states
 WAITING_PASSWORD_ENCRYPT = 1
@@ -40,7 +39,7 @@ def derive_key(password: str, salt: bytes) -> bytes:
     """PBKDF2-HMAC-SHA256 key derivation"""
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
-        length=32,                          # AES-256
+        length=32,
         salt=salt,
         iterations=100000,
         backend=default_backend()
@@ -49,10 +48,7 @@ def derive_key(password: str, salt: bytes) -> bytes:
 
 
 def encrypt_data(plaintext: bytes, password: str) -> bytes:
-    """
-    Encrypt with AES-256-GCM
-    Output format:  salt (16) + nonce (12) + ciphertext+tag
-    """
+    """Encrypt with AES-256-GCM"""
     salt = os.urandom(16)
     key = derive_key(password, salt)
     nonce = os.urandom(12)
@@ -73,6 +69,143 @@ def decrypt_data(encrypted: bytes, password: str) -> bytes:
     return aesgcm.decrypt(nonce, ciphertext, None)
 
 
+def create_encrypted_html(encrypted_bytes: bytes, password: str) -> str:
+    """Generate self-decrypting HTML wrapper with copy & inspect protection"""
+    enc_b64 = base64.b64encode(encrypted_bytes).decode('utf-8')
+    
+    html_template = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protected HTML File</title>
+    <style>
+        body {{
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }}
+        .auth-container {{
+            background: #1e293b;
+            padding: 35px 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            width: 340px;
+            border: 1px solid #334155;
+        }}
+        h2 {{ margin-bottom: 10px; color: #38bdf8; font-size: 22px; }}
+        p {{ color: #94a3b8; font-size: 14px; margin-bottom: 20px; }}
+        input {{
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #fff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }}
+        input:focus {{ border-color: #38bdf8; }}
+        button {{
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }}
+        button:hover {{ background: #1d4ed8; }}
+        #error {{ color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }}
+    </style>
+</head>
+<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
+    <div class="auth-container">
+        <h2>🔒 Secured Page</h2>
+        <p>Enter your password to unlock the content:</p>
+        <input type="password" id="passwordInput" placeholder="Enter Password" autofocus>
+        <button onclick="unlockContent()">Unlock File</button>
+        <div id="error"></div>
+    </div>
+
+    <script>
+        // Block Inspect, View Source & Shortcuts
+        document.addEventListener('keydown', function(e) {{
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
+                (e.ctrlKey && e.key === 'u')) {{
+                e.preventDefault();
+                return false;
+            }}
+        }});
+
+        async function unlockContent() {{
+            const password = document.getElementById('passwordInput').value;
+            const errorDiv = document.getElementById('error');
+            
+            if (!password) {{
+                errorDiv.innerText = "⚠️ Please enter the password!";
+                return;
+            }}
+
+            try {{
+                errorDiv.innerText = "⏳ Decrypting...";
+                const rawData = Uint8Array.from(atob("{enc_b64}"), c => c.charCodeAt(0));
+                const salt = rawData.slice(0, 16);
+                const iv = rawData.slice(16, 28);
+                const ciphertext = rawData.slice(28);
+
+                const enc = new TextEncoder();
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]
+                );
+                
+                const key = await window.crypto.subtle.deriveKey(
+                    {{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }},
+                    keyMaterial,
+                    {{ name: "AES-GCM", length: 256 }},
+                    false,
+                    ["decrypt"]
+                );
+
+                const decrypted = await window.crypto.subtle.decrypt(
+                    {{ name: "AES-GCM", iv: iv }}, key, ciphertext
+                );
+
+                const decoder = new TextDecoder();
+                const htmlContent = decoder.decode(decrypted);
+
+                document.open();
+                document.write(htmlContent);
+                document.close();
+            } catch (err) {{
+                errorDiv.innerText = "❌ Incorrect Password or Corrupted File!";
+            }}
+        }}
+
+        // Allow pressing Enter to submit
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{
+            if (e.key === 'Enter') unlockContent();
+        }});
+    </script>
+</body>
+</html>"""
+    return html_template
+
+
 # ======================== BOT HANDLERS ========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,8 +224,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "AES-256-GCM + PBKDF2 Protected\n\n"
         "• HTML files को password से lock करो\n"
-        "• 1 second में decrypt करो\n"
-        "• Strong military-grade encryption\n\n"
+        "• Self-decrypting HTML file मिलेगी\n"
+        "• Keyboard & Copy Block protection\n\n"
         "नीचे से option चुनो 👇"
     )
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
@@ -127,14 +260,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "1. ENCRYPT बटन दबाओ\n"
             "2. Password भेजो\n"
             "3. HTML file भेजो\n"
-            "4. Encrypted file मिल जाएगी\n\n"
-            "<b>DECRYPT:</b>\n"
-            "1. DECRYPT बटन दबाओ\n"
-            "2. Password भेजो\n"
-            "3. Encrypted file भेजो\n"
-            "4. Original HTML मिल जाएगी\n\n"
-            "🛡️ Encryption: AES-256-GCM\n"
-            "🔑 Key Derivation: PBKDF2 (100k iterations)\n\n"
+            "4. Secured HTML file मिल जाएगी\n\n"
+            "🛡️ Features:\n"
+            "• AES-256-GCM Encryption\n"
+            "• PBKDF2 Key Derivation\n"
+            "• Copy & Inspect Block\n\n"
             "Made with ❤️ by <b>ADITYA RAJPUT</b>"
         )
         await query.edit_message_text(help_text, parse_mode="HTML")
@@ -165,7 +295,7 @@ async def receive_password_decrypt(update: Update, context: ContextTypes.DEFAULT
     context.user_data["password"] = password
     await update.message.reply_text(
         f"✅ Password set: <code>{password}</code>\n\n"
-        "अब <b>Encrypted file</b> भेजो 🔒",
+        "अब <b>Encrypted file (.bin)</b> भेजो 🔒",
         parse_mode="HTML"
     )
     return WAITING_FILE_DECRYPT
@@ -185,24 +315,26 @@ async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYP
     file_bytes = await file.download_as_bytearray()
 
     try:
-        encrypted = encrypt_data(bytes(file_bytes), password)
+        encrypted_bytes = encrypt_data(bytes(file_bytes), password)
+        html_wrapper = create_encrypted_html(encrypted_bytes, password)
         
-        # Save as .encrypted
         original_name = update.message.document.file_name or "file.html"
-        enc_name = original_name.rsplit(".", 1)[0] + "_encrypted.bin"
+        enc_name = original_name.rsplit(".", 1)[0] + "_encrypted.html"
+        file_size_kb = len(html_wrapper.encode('utf-8')) / 1024
 
         await update.message.reply_document(
-            document=InputFile(io.BytesIO(encrypted), filename=enc_name),
+            document=InputFile(io.BytesIO(html_wrapper.encode('utf-8')), filename=enc_name),
             caption=(
-                f"✅ <b>AES-256-GCM Encryption Successful!</b>\n\n"
-                f"📁 File: <code>{enc_name}</code>\n"
-                f"📦 Size: {len(encrypted)/1024:.1f} KB\n"
-                f"🔑 Password: <code>{password}</code>\n\n"
-                f"🛡️ Protected with:\n"
-                f"• AES-256-GCM Encryption\n"
-                f"• PBKDF2 Hash Derivation\n"
-                f"• Random Salt + Nonce\n\n"
-                f"<b>Made by ADITYA RAJPUT</b>"
+                f"✅ <b>AES-256 GCM Eɴᴄʀʏᴘᴛɪᴏɴ Sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
+                f"📁 <b>Fɪʟᴇ:</b> <code>{enc_name}</code>\n"
+                f"📦 <b>Sɪᴢᴇ:</b> {file_size_kb:.1f} KB\n\n"
+                f"🔑 <b>Yᴏᴜʀ Fɪʟᴇ Pᴀssᴡᴏʀᴅ:</b> <code>{password}</code>\n\n"
+                f"🛡️ <b>Pʀᴏᴛᴇᴄᴛᴇᴅ ᴡɪᴛʜ:</b>\n"
+                f"• 🚫 AES-256-GCM Eɴᴄʀʏᴘᴛɪᴏɴ\n"
+                f"• ⌨️ Kᴇʏʙᴏᴀʀᴅ & Cᴏᴘʏ Bʟᴏᴄᴋ\n"
+                f"• 🌐 Sᴇʟꜰ-Dᴇᴄʀʏᴘᴛɪɴɢ Hᴛᴍʟ\n"
+                f"• 🛡️ PBKDF2 Hᴀsʜ Dᴇʀɪᴠᴀᴛɪᴏɴ\n\n"
+                f"👑 <b>Yᴏᴜʀ ᴄᴏᴅᴇ ɪs ɴᴏᴡ 100% ᴘʀᴏᴛᴇᴄᴛᴇᴅ!</b>"
             ),
             parse_mode="HTML"
         )
@@ -224,16 +356,14 @@ async def receive_file_decrypt(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
 
     file = await update.message.document.get_file()
-    encrypted_bytes = await file.download_as_bytearray()
+    file_bytes = await file.download_as_bytearray()
 
     try:
-        decrypted = decrypt_data(bytes(encrypted_bytes), password)
+        # Support old .bin files if decrypted via bot
+        decrypted = decrypt_data(bytes(file_bytes), password)
 
         original_name = update.message.document.file_name or "decrypted"
-        if original_name.endswith("_encrypted.bin"):
-            out_name = original_name.replace("_encrypted.bin", "_decrypted.html")
-        else:
-            out_name = original_name.rsplit(".", 1)[0] + "_decrypted.html"
+        out_name = original_name.rsplit(".", 1)[0] + "_decrypted.html"
 
         await update.message.reply_document(
             document=InputFile(io.BytesIO(decrypted), filename=out_name),
@@ -252,7 +382,7 @@ async def receive_file_decrypt(update: Update, context: ContextTypes.DEFAULT_TYP
             f"Possible reasons:\n"
             f"• Wrong password\n"
             f"• File corrupted\n"
-            f"• Not a valid AES-GCM encrypted file\n\n"
+            f"• Not a valid encrypted binary file\n\n"
             f"Error: <code>{str(e)}</code>",
             parse_mode="HTML"
         )
