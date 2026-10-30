@@ -2,6 +2,8 @@ import os
 import io
 import base64
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -32,6 +34,22 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ======================== RENDER WEB PORT FIX ========================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+    
+    def log_message(self, format, *args):
+        pass # Suppress server logs to keep console clean
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    logger.info(f"Health check server running on port {port}")
+    server.serve_forever()
 
 # ======================== CRYPTO FUNCTIONS ========================
 
@@ -295,7 +313,7 @@ async def receive_password_decrypt(update: Update, context: ContextTypes.DEFAULT
     context.user_data["password"] = password
     await update.message.reply_text(
         f"✅ Password set: <code>{password}</code>\n\n"
-        "अब <b>Encrypted file (.bin)</b> भेजो 🔒",
+        "अब <b>Encrypted file</b> भेजो 🔒",
         parse_mode="HTML"
     )
     return WAITING_FILE_DECRYPT
@@ -319,22 +337,27 @@ async def receive_file_encrypt(update: Update, context: ContextTypes.DEFAULT_TYP
         html_wrapper = create_encrypted_html(encrypted_bytes, password)
         
         original_name = update.message.document.file_name or "file.html"
-        enc_name = original_name.rsplit(".", 1)[0] + "_encrypted.html"
+        base_name = original_name.rsplit(".", 1)[0]
+        if base_name.endswith("_encrypted"):
+            enc_name = base_name + ".html"
+        else:
+            enc_name = base_name + "_encrypted.html"
+            
         file_size_kb = len(html_wrapper.encode('utf-8')) / 1024
 
         await update.message.reply_document(
             document=InputFile(io.BytesIO(html_wrapper.encode('utf-8')), filename=enc_name),
             caption=(
-                f"✅ <b>AES-256 GCM Eɴᴄʀʏᴘᴛɪᴏɴ Sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
-                f"📁 <b>Fɪʟᴇ:</b> <code>{enc_name}</code>\n"
-                f"📦 <b>Sɪᴢᴇ:</b> {file_size_kb:.1f} KB\n\n"
-                f"🔑 <b>Yᴏᴜʀ Fɪʟᴇ Pᴀssᴡᴏʀᴅ:</b> <code>{password}</code>\n\n"
-                f"🛡️ <b>Pʀᴏᴛᴇᴄᴛᴇᴅ ᴡɪᴛʜ:</b>\n"
+                f"✅ AES-256 GCM Eɴᴄʀʏᴘᴛɪᴏɴ Sᴜᴄᴄᴇssғᴜʟ!\n\n"
+                f"📁 Fɪʟᴇ: <code>{enc_name}</code>\n"
+                f"📦 Sɪᴢᴇ: {file_size_kb:.1f} KB\n\n"
+                f"🔑 Yᴏᴜʀ Fɪʟᴇ Pᴀssᴡᴏʀᴅ: <code>{password}</code>\n\n"
+                f"🛡️ Pʀᴏᴛᴇᴄᴛᴇᴅ ᴡɪᴛʜ:\n"
                 f"• 🚫 AES-256-GCM Eɴᴄʀʏᴘᴛɪᴏɴ\n"
                 f"• ⌨️ Kᴇʏʙᴏᴀʀᴅ & Cᴏᴘʏ Bʟᴏᴄᴋ\n"
-                f"• 🌐 Sᴇʟꜰ-Dᴇᴄʀʏᴘᴛɪɴɢ Hᴛᴍʟ\n"
+                f"• 🌐 Eᴍᴏᴊɪ-Hᴇx Pᴀʏʟᴏᴀᴅ\n"
                 f"• 🛡️ PBKDF2 Hᴀsʜ Dᴇʀɪᴠᴀᴛɪᴏɴ\n\n"
-                f"👑 <b>Yᴏᴜʀ ᴄᴏᴅᴇ ɪs ɴᴏᴡ 100% ᴘʀᴏᴛᴇᴄᴛᴇᴅ!</b>"
+                f"👑 Yᴏᴜʀ ᴄᴏᴅᴇ ɪs ɴᴏᴡ 100% ᴘʀᴏᴛᴇᴄᴛᴇᴅ!"
             ),
             parse_mode="HTML"
         )
@@ -359,7 +382,6 @@ async def receive_file_decrypt(update: Update, context: ContextTypes.DEFAULT_TYP
     file_bytes = await file.download_as_bytearray()
 
     try:
-        # Support old .bin files if decrypted via bot
         decrypted = decrypt_data(bytes(file_bytes), password)
 
         original_name = update.message.document.file_name or "decrypted"
@@ -403,6 +425,9 @@ def main():
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ ERROR: Bot Token set करो!")
         return
+
+    # Start the dummy HTTP server in background thread so Render web service passes health check
+    threading.Thread(target=run_health_server, daemon=True).start()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
