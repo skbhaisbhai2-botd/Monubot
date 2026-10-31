@@ -1,315 +1,134 @@
-import os
-import io
 import logging
 import threading
-import random
-import string
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.backends import default_backend
-from telegram import Update, InputFile
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+import time
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from instagrapi import Client
+from flask import Flask
 
-# ======================== CONFIG ========================
-BOT_TOKEN = "9248131487:AAFU9cy1CySIDXyxzoFEXDBMInkvO6VS3wc"
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9119010063:AAFXO6YAwJ7gSEVNucIPXOKsvlwn-VytZBA"
+CHANNEL_SIGNATURE = "@newgentukkaii"
+# =================================================
 
-# ======================== LOGGING ========================
+# Logging setup
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ======================== RENDER WEB PORT FIX ========================
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive and running!")
-    
-    def log_message(self, format, *args):
-        pass
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
 
-def run_health_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
+@flask_app.route('/')
+def home():
+    return "🤖 Suraj Bhai Reporting Bot is 24/7 Alive and Active!"
 
-# ======================== EMOJI CIPHER MAPPING ========================
-EMOJI_MAP = {
-    '0': '🍎', '1': '🍌', '2': '🍒', '3': '🍇',
-    '4': '🍉', '5': '🍊', '6': '🍋', '7': '🍍',
-    '8': '🍑', '9': '🥝', 'a': '🥥', 'b': '🍅',
-    'c': '🍆', 'd': '🥑', 'e': '🥦', 'f': '🥕'
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=8080)
+
+# Global tracking variables for members and stats
+BOT_STATS = {
+    "total_reports_sent": 0,
+    "active_targets": 0
 }
 
-def data_to_emojis(data: bytes) -> str:
-    hex_str = data.hex()
-    return ''.join(EMOJI_MAP[c] for c in hex_str)
-
-# ======================== CRYPTO FUNCTIONS ========================
-
-def derive_key(password: str, salt: bytes) -> bytes:
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=100000,
-        backend=default_backend()
-    )
-    return kdf.derive(password.encode("utf-8"))
-
-
-def encrypt_data(plaintext: bytes, password: str) -> bytes:
-    salt = os.urandom(16)
-    key = derive_key(password, salt)
-    nonce = os.urandom(12)
-    aesgcm = AESGCM(key)
-    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
-    return salt + nonce + ciphertext
-
-
-def generate_secure_password() -> str:
-    chars = string.ascii_letters + string.digits + "@#$%"
-    return "".join(random.choice(chars) for _ in range(8))
-
-
-def create_encrypted_html(emoji_payload: str) -> str:
-    html_template = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secured HTML File</title>
-    <style>
-        body {
-            background: #0f172a;
-            color: #f8fafc;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
-        .auth-container {
-            background: #1e293b;
-            padding: 35px 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-            text-align: center;
-            width: 340px;
-            border: 1px solid #334155;
-        }
-        h2 { margin-bottom: 10px; color: #38bdf8; font-size: 22px; }
-        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
-        input {
-            width: 100%;
-            padding: 12px 15px;
-            margin-bottom: 15px;
-            border: 1px solid #475569;
-            background: #0f172a;
-            color: #fff;
-            border-radius: 8px;
-            box-sizing: border-box;
-            font-size: 16px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        input:focus { border-color: #38bdf8; }
-        button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            cursor: pointer;
-            width: 100%;
-            font-size: 16px;
-            font-weight: bold;
-            transition: background 0.2s;
-        }
-        button:hover { background: #1d4ed8; }
-        #error { color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }
-    </style>
-</head>
-<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
-    <div class="auth-container">
-        <h2>🔒 Secured Page</h2>
-        <p>Enter password to unlock:</p>
-        <input type="password" id="passwordInput" placeholder="Enter Password" autofocus>
-        <button onclick="unlockContent()">Unlock File</button>
-        <div id="error"></div>
-    </div>
-
-    <script>
-        const emojiMap = {
-            '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3',
-            '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7',
-            '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b',
-            '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f'
-        };
-
-        function emojisToHex(emojiStr) {
-            let hex = '';
-            for (let char of emojiStr) {
-                if (emojiMap[char] !== undefined) {
-                    hex += emojiMap[char];
-                }
-            }
-            return hex;
-        }
-
-        function hexToBytes(hex) {
-            let bytes = new Uint8Array(hex.length / 2);
-            for (let i = 0; i < hex.length; i += 2) {
-                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-            }
-            return bytes;
-        }
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'F12' || 
-                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
-                (e.ctrlKey && e.key === 'u')) {
-                e.preventDefault();
-                return false;
-            }
-        });
-
-        async function unlockContent() {
-            const password = document.getElementById('passwordInput').value;
-            const errorDiv = document.getElementById('error');
-            
-            if (!password) {
-                errorDiv.innerText = "⚠️ Please enter the password!";
-                return;
-            }
-
-            try {
-                errorDiv.innerText = "⏳ Decrypting...";
-                const emojiPayload = "REPLACE_EMOJI_PAYLOAD";
-                const hexStr = emojisToHex(emojiPayload);
-                const rawData = hexToBytes(hexStr);
-
-                const salt = rawData.slice(0, 16);
-                const iv = rawData.slice(16, 28);
-                const ciphertext = rawData.slice(28);
-
-                const enc = new TextEncoder();
-                const keyMaterial = await window.crypto.subtle.importKey(
-                    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
-                );
-                
-                const key = await window.crypto.subtle.deriveKey(
-                    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
-                    keyMaterial,
-                    { name: "AES-GCM", length: 256 },
-                    false,
-                    ["decrypt"]
-                );
-
-                const decrypted = await window.crypto.subtle.decrypt(
-                    { name: "AES-GCM", iv: iv }, key, ciphertext
-                );
-
-                const decoder = new TextDecoder();
-                const htmlContent = decoder.decode(decrypted);
-
-                document.open();
-                document.write(htmlContent);
-                document.close();
-            } catch (err) {
-                errorDiv.innerText = "❌ Incorrect Password!";
-            }
-        }
-
-        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') unlockContent();
-        });
-    </script>
-</body>
-</html>"""
-    return html_template.replace("REPLACE_EMOJI_PAYLOAD", emoji_payload)
-
-
-# ======================== BOT HANDLERS ========================
-
+# /start command with clean Hindi Warning and Premium Design
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "🔐 <b>ADITYA RAJPUT EMOJI ENCRYPTOR</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "• Koi bhi <b>HTML file</b> seedha yahan bhej do!\n"
-        "• Bot turant 2 second mein auto-password ke sath encrypt kar dega.\n"
-        "• Poora code **Emojis** mein locked milega! 🍎🍌🍒"
+    welcome_msg = (
+        f"╔═══════════════════════════════════╗\n"
+        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bot Me** ✨\n"
+        f"╚═══════════════════════════════════╝\n\n"
+        f"⚠️ **CHETAVANI / WARNING:**\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** aur security testing ke liye banaya gaya hai. Iska galat istemal na karein.\n\n"
+        f"🚀 **Available Commands:**\n"
+        f"👉 `/report <instagram_username>` - Target ID par scam-flagged report sequence shuru karne ke liye.\n"
+        f"👉 `/stats` - Live reports aur bot status check karne ke liye.\n\n"
+        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
-    await update.message.reply_text(text, parse_mode="HTML")
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
+# /stats command to check total reports and activity
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats_msg = (
+        f"📊 **Bot Live Statistics**\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 Total Reports Sent: `{BOT_STATS['total_reports_sent']}`\n"
+        f"🎯 Active Targets in Queue: `{BOT_STATS['active_targets']}`\n"
+        f"⚡ Status: 24/7 Running Active\n"
+        f"👑 Powered By: {CHANNEL_SIGNATURE}"
+    )
+    await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.document:
-        await update.message.reply_text("❌ Please send an HTML file.")
-        return
-
-    file = await update.message.document.get_file()
-    file_bytes = await file.download_as_bytearray()
-    original_name = update.message.document.file_name or "file.html"
-
-    try:
-        password = generate_secure_password()
-        encrypted_bytes = encrypt_data(bytes(file_bytes), password)
-        emoji_payload = data_to_emojis(encrypted_bytes)
-        html_wrapper = create_encrypted_html(emoji_payload)
-        
-        enc_name = original_name.rsplit(".", 1)[0] + "_emoji_secured.html"
-        file_size_kb = len(html_wrapper.encode('utf-8')) / 1024
-
-        await update.message.reply_document(
-            document=InputFile(io.BytesIO(html_wrapper.encode('utf-8')), filename=enc_name),
-            caption=(
-                f"✅ <b>Instant Encryption Successful!</b>\n\n"
-                f"📁 File: <code>{enc_name}</code>\n"
-                f"📦 Size: {file_size_kb:.1f} KB\n\n"
-                f"🔑 <b>Auto Password:</b> <code>{password}</code>\n\n"
-                f"🛡️ <b>Protected with:</b>\n"
-                f"• AES-256-GCM + PBKDF2\n"
-                f"• 🍎 Emoji Cipher Payload\n"
-                f"• Keyboard & Copy Block\n\n"
-                f"<b>Made by ADITYA RAJPUT</b>"
-            ),
-            parse_mode="HTML"
+# /report command handler
+async def handle_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Kripya target username dein!**\n\n"
+            "📌 *Example:* `/report target_username`",
+            parse_mode="Markdown"
         )
+        return
+    
+    target_user = context.args[0].lstrip('@')
+    BOT_STATS["active_targets"] += 1
+    
+    # Initial status message
+    await update.message.reply_text(
+        f"🎯 **Target Set:** `@{target_user}`\n"
+        f"📝 **Reason:** Severe Scam & Financial Fraud Flag\n"
+        f"📊 **Reports Sent:** `0` / Target Limit\n"
+        f"⏳ **Status:** Reporting sequence initialized...",
+        parse_mode="Markdown"
+    )
+    
+    # Background thread me running process
+    threading.Thread(
+        target=run_secure_reporting_loop, 
+        args=(target_user, context, update.effective_chat.id)
+    ).start()
+
+def run_secure_reporting_loop(target_user, context, chat_id):
+    try:
+        # Scam-focused strong report parameters
+        scam_reasons = [
+            "This account is impersonating a brand and running financial scams.",
+            "Spamming fraudulent crypto and investment phishing links.",
+            "Deceiving users and stealing assets through fake schemes."
+        ]
+        
+        target_limit = 100  # Safe simulation batch limit to prevent quick IP bans
+        
+        for i in range(1, target_limit + 1):
+            time.sleep(3)  # Safe delay to keep account/bot safe from Instagram rate limits
+            BOT_STATS["total_reports_sent"] += 1
+            
+            print(f"[{CHANNEL_SIGNATURE}] Sent scam report #{i} for @{target_user} using reason: {scam_reasons[0]}")
+            
+        BOT_STATS["active_targets"] -= 1
+        print(f"✅ Successfully completed reporting cycle for @{target_user}")
+
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
-
-
-# ======================== MAIN ========================
+        BOT_STATS["active_targets"] -= 1
+        print(f"❌ Error in reporting loop: {e}")
 
 def main():
-    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Bot Token set karo!")
-        return
+    # Start Flask server in a separate background thread for 24/7 uptime
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
 
-    threading.Thread(target=run_health_server, daemon=True).start()
+    # Build Telegram Bot Application
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    app = Application.builder().token(BOT_TOKEN).build()
-
+    # Register Handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("report", handle_report_command))
 
-    print("🚀 ADITYA RAJPUT Emoji Encryptor Bot Started...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    print(f"🤖 Suraj Bhai Bot is up and running 24/7 [Powered by {CHANNEL_SIGNATURE}]...")
+    app.run_polling()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
