@@ -246,19 +246,26 @@ def create_encrypted_html(emoji_payload: str) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "🔐 <b>ADITYA RAJPUT EMOJI ENCRYPTOR</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "• Koi bhi <b>HTML file</b> seedha yahan bhej do!\n"
-        "• Bot turant 2 second mein auto-password ke sath encrypt kar dega.\n"
-        "• Poora code **Emojis** mein locked milega! 🍎🍌🍒"
+        "╔═════════════════════════╗\n"
+        "     🌟 **WELCOME TO VIP ENCRYPTOR** 🌟     \n"
+        "╚═════════════════════════╝\n\n"
+        "⚡ **Advanced Emoji Cipher Security System**\n\n"
+        "📂 **How to Use:**\n"
+        "• Koi bhi **HTML file** direct yahan chat mein upload karein.\n"
+        "• Bot microseconds mein secure password generate karke file ko lock kar dega.\n"
+        "• Code poori tarah se **Emojis (🍎🍌🍒)** mein convert ho jayega!\n\n"
+        "🛡️ **Security Features:**\n"
+        "• AES-256-GCM Military Grade Encryption\n"
+        "• Anti-Inspect / Copy Block Protection\n"
+        "• Auto Password Generation\n\n"
+        "✨ *Send your HTML file now to begin!*"
     )
-    await update.message.reply_text(text, parse_mode="HTML")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.document:
-        await update.message.reply_text("❌ Please send an HTML file.")
+        await update.message.reply_text("❌ Please send a valid HTML file.")
         return
 
     file = await update.message.document.get_file()
