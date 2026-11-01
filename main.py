@@ -83,52 +83,54 @@ def generate_secure_password() -> str:
 
 
 def create_encrypted_html(emoji_payload: str) -> str:
-    html_template = """<!DOCTYPE html>
+    dummy_padding = ''.join(random.choice(list(EMOJI_MAP.values())) for _ in range(8000))
+    
+    html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secured HTML File</title>
+    <title>VIP Secured Protected Page</title>
     <style>
-        body {
-            background: #0f172a;
-            color: #f8fafc;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        body {{
+            background: #050505;
+            color: #00ffcc;
+            font-family: 'Courier New', Courier, monospace;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
             overflow: hidden;
-        }
-        .auth-container {
-            background: #1e293b;
-            padding: 35px 30px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        }}
+        .auth-container {{
+            background: #111118;
+            padding: 40px 30px;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(0, 255, 204, 0.3);
             text-align: center;
-            width: 340px;
-            border: 1px solid #334155;
-        }
-        h2 { margin-bottom: 10px; color: #38bdf8; font-size: 22px; }
-        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
-        input {
+            width: 360px;
+            border: 2px solid #00ffcc;
+        }}
+        h2 {{ margin-bottom: 10px; color: #00ffcc; font-size: 24px; text-shadow: 0 0 10px rgba(0,255,204,0.5); }}
+        p {{ color: #a0aec0; font-size: 14px; margin-bottom: 20px; }}
+        input {{
             width: 100%;
             padding: 12px 15px;
             margin-bottom: 15px;
-            border: 1px solid #475569;
-            background: #0f172a;
-            color: #fff;
+            border: 1px solid #00ffcc;
+            background: #000;
+            color: #00ffcc;
             border-radius: 8px;
             box-sizing: border-box;
             font-size: 16px;
             outline: none;
-            transition: border-color 0.2s;
-        }
-        input:focus { border-color: #38bdf8; }
-        button {
-            background: #2563eb;
-            color: white;
+            text-align: center;
+            letter-spacing: 2px;
+        }}
+        button {{
+            background: #00ffcc;
+            color: #000;
             border: none;
             padding: 12px 20px;
             border-radius: 8px;
@@ -136,68 +138,71 @@ def create_encrypted_html(emoji_payload: str) -> str:
             width: 100%;
             font-size: 16px;
             font-weight: bold;
-            transition: background 0.2s;
-        }
-        button:hover { background: #1d4ed8; }
-        #error { color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }
+            transition: 0.3s;
+        }}
+        button:hover {{ background: #00b38f; box-shadow: 0 0 15px #00ffcc; }}
+        #error {{ color: #ff3333; margin-top: 12px; font-size: 13px; font-weight: bold; }}
     </style>
 </head>
 <body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
     <div class="auth-container">
-        <h2>🔒 Secured Page</h2>
-        <p>Enter password to unlock:</p>
-        <input type="password" id="passwordInput" placeholder="Enter Password" autofocus>
-        <button onclick="unlockContent()">Unlock File</button>
+        <h2>🔒 VIP SECURED VAULT</h2>
+        <p>Enter Decryption Password:</p>
+        <input type="password" id="passwordInput" placeholder="********" autofocus>
+        <button onclick="unlockContent()">UNLOCK FILE</button>
         <div id="error"></div>
     </div>
 
+    <div id="encryptedPayload" style="display:none;">{emoji_payload}</div>
+    <div style="display:none; opacity:0; font-size:1px;">{dummy_padding}</div>
+
     <script>
-        const emojiMap = {
+        const emojiMap = {{
             '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3',
             '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7',
             '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b',
             '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f'
-        };
+        }};
 
-        function emojisToHex(emojiStr) {
+        function emojisToHex(emojiStr) {{
             let hex = '';
-            for (let char of emojiStr) {
-                if (emojiMap[char] !== undefined) {
+            for (const char of emojiStr) {{
+                if (emojiMap[char] !== undefined) {{
                     hex += emojiMap[char];
-                }
-            }
+                }}
+            }}
             return hex;
-        }
+        }}
 
-        function hexToBytes(hex) {
+        function hexToBytes(hex) {{
             let bytes = new Uint8Array(hex.length / 2);
-            for (let i = 0; i < hex.length; i += 2) {
+            for (let i = 0; i < hex.length; i += 2) {{
                 bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-            }
+            }}
             return bytes;
-        }
+        }}
 
-        document.addEventListener('keydown', function(e) {
+        document.addEventListener('keydown', function(e) {{
             if (e.key === 'F12' || 
                 (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
-                (e.ctrlKey && e.key === 'u')) {
+                (e.ctrlKey && e.key === 'u')) {{
                 e.preventDefault();
                 return false;
-            }
-        });
+            }}
+        }});
 
-        async function unlockContent() {
-            const password = document.getElementById('passwordInput').value;
+        async function unlockContent() {{
+            const password = document.getElementById('passwordInput').value.trim();
             const errorDiv = document.getElementById('error');
             
-            if (!password) {
+            if (!password) {{
                 errorDiv.innerText = "⚠️ Please enter the password!";
                 return;
-            }
+            }}
 
-            try {
-                errorDiv.innerText = "⏳ Decrypting...";
-                const emojiPayload = "REPLACE_EMOJI_PAYLOAD";
+            try {{
+                errorDiv.innerText = "⏳ Decrypting Vault...";
+                const emojiPayload = document.getElementById('encryptedPayload').innerText.trim();
                 const hexStr = emojisToHex(emojiPayload);
                 const rawData = hexToBytes(hexStr);
 
@@ -207,19 +212,19 @@ def create_encrypted_html(emoji_payload: str) -> str:
 
                 const enc = new TextEncoder();
                 const keyMaterial = await window.crypto.subtle.importKey(
-                    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+                    "raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]
                 );
                 
                 const key = await window.crypto.subtle.deriveKey(
-                    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+                    {{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }},
                     keyMaterial,
-                    { name: "AES-GCM", length: 256 },
+                    {{ name: "AES-GCM", length: 256 }},
                     false,
                     ["decrypt"]
                 );
 
                 const decrypted = await window.crypto.subtle.decrypt(
-                    { name: "AES-GCM", iv: iv }, key, ciphertext
+                    {{ name: "AES-GCM", iv: iv }}, key, ciphertext
                 );
 
                 const decoder = new TextDecoder();
@@ -228,18 +233,18 @@ def create_encrypted_html(emoji_payload: str) -> str:
                 document.open();
                 document.write(htmlContent);
                 document.close();
-            } catch (err) {
+            }} catch (err) {{
                 errorDiv.innerText = "❌ Incorrect Password!";
-            }
-        }
+            }}
+        }}
 
-        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{
             if (e.key === 'Enter') unlockContent();
-        });
+        }});
     </script>
 </body>
 </html>"""
-    return html_template.replace("REPLACE_EMOJI_PAYLOAD", emoji_payload)
+    return html_template
 
 
 # ======================== BOT HANDLERS ========================
