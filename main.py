@@ -22,8 +22,6 @@ from telegram.ext import (
 
 # ======================== CONFIG ========================
 BOT_TOKEN = "9143295973:AAGRCn-GHHJMMylM086i2V8c8wqgX9BAxNI"
-REQUIRED_CHANNEL = "@UemRGWr-B2wzMmFl" # Channel username or invite hash reference
-CHANNEL_LINK = "https://t.me/+UemRGWr-B2wzMmFl"
 
 # ======================== LOGGING ========================
 logging.basicConfig(
@@ -58,14 +56,6 @@ EMOJI_MAP = {
 def data_to_emojis(data: bytes) -> str:
     hex_str = data.hex()
     return ''.join(EMOJI_MAP[c] for c in hex_str)
-
-def emojis_to_data(emoji_str: str) -> bytes:
-    reverse_map = {v: k for k, v in EMOJI_MAP.items()}
-    hex_str = ''
-    for char in emoji_str:
-        if char in reverse_map:
-            hex_str += reverse_map[char]
-    return bytes.fromhex(hex_str)
 
 # ======================== CRYPTO FUNCTIONS ========================
 
@@ -151,36 +141,9 @@ def create_encrypted_html(emoji_payload: str) -> str:
 </html>"""
     return html_template
 
-# ======================== CHANNEL MEMBERSHIP CHECK ========================
-async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user_id = update.effective_user.id
-    try:
-        member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
-            return True
-    except Exception as e:
-        logger.error(f"Membership check error: {e}")
-    return False
-
 # ======================== BOT HANDLERS ========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    is_joined = await check_membership(update, context)
-    
-    if not is_joined:
-        keyboard = [[InlineKeyboardButton("📢 Join Channel Now", url=CHANNEL_LINK)],
-                    [InlineKeyboardButton("🔄 Verify Membership", callback_data="check_join")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "⚠️ **WARNING: ACCESS DENIED!**\n\n"
-            "Aapne hamara official channel join nahi kiya hai[span_3](start_span)[span_3](end_span)!\n"
-            "Bot ko use karne ke liye pehle niche diye gaye button par click karke channel join karein[span_4](start_span)[span_4](end_span), phir **Verify Membership** dabayein.",
-            reply_markup=reply_markup,
-            parse_mode="Markdown"
-        )
-        return
-
     text = (
         "╔═════════════════════════╗\n"
         "     🌟 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
@@ -190,7 +153,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔒 Encrypt HTML", callback_data="mode_encrypt"),
          InlineKeyboardButton("🔓 Crack / Decrypt", callback_data="mode_decrypt")],
-        [InlineKeyboardButton("🌐 URL to HTML", callback_data="mode_url")]
+        [InlineKeyboardButton("🌐 URL to HTML", callback_data="mode_url"),
+         InlineKeyboardButton("⚡ VIP Status", callback_data="mode_status")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -199,14 +163,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data == "check_join":
-        is_joined = await check_membership(update, context)
-        if is_joined:
-            await query.message.edit_text("✅ **Verification Successful!** Aapne channel join kar liya hai[span_5](start_span)[span_5](end_span). Ab /start command bhejein.")
-        else:
-            await query.message.edit_text("⚠️ **Warning:** Aapne abhi tak channel join nahi kiya hai! Pehle join karein[span_6](start_span)[span_6](end_span).")
-        return
-
     if query.data == "mode_encrypt":
         context.user_data['mode'] = 'encrypt'
         await query.message.reply_text("🔒 **Encrypt Mode Activated:** Ab apni koi bhi HTML file yahan bhej dein, turant lock kar di jayegi!")
@@ -216,12 +172,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "mode_url":
         context.user_data['mode'] = 'url'
         await query.message.reply_text("🌐 **URL to HTML Mode Activated:** Koi bhi web link (URL) yahan bhej dein, bot use turant HTML file mein convert kar dega!")
+    elif query.data == "mode_status":
+        await query.message.reply_text("👑 **Bot Status:** Fully Active & Running 24/7!\n✨ **Made by ADITYY RAJPUT**")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_membership(update, context):
-        await update.message.reply_text("⚠️ **Warning:** Pehle channel join karein tabhi file process hogi[span_7](start_span)[span_7](end_span)!")
-        return
-
     if not update.message.document:
         await update.message.reply_text("❌ Please send a valid file.")
         return
@@ -247,33 +201,17 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
         elif mode == 'decrypt':
-            # Auto Crack / Decrypt logic parsing emojis or extracting raw payload
             content_str = file_bytes.decode('utf-8', errors='ignore')
-            if "encryptedPayload" in content_str:
-                start_idx = content_str.find('id="encryptedPayload">') + len('id="encryptedPayload">')
-                end_idx = content_str.find('</div>', start_idx)
-                emoji_payload = content_str[start_idx:end_idx].strip()
-                
-                # Simple bruteforce or unpacking wrapper bypass for instant crack
-                dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
-                await update.message.reply_document(
-                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
-                    caption="🔓 **File successfully cracked and unlocked without password!**",
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_document(
-                    document=InputFile(io.BytesIO(file_bytes), filename=original_name),
-                    caption="🔓 **File is already clear HTML!**"
-                )
+            dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
+            await update.message.reply_document(
+                document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
+                caption="🔓 **File successfully cracked and unlocked without password!**",
+                parse_mode="Markdown"
+            )
     except Exception as e:
         await update.message.reply_text(f"❌ Error during processing: {str(e)}")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await check_membership(update, context):
-        await update.message.reply_text("⚠️ **Warning:** Pehle channel join karein[span_8](start_span)[span_8](end_span)!")
-        return
-
     text = update.message.text.strip()
     mode = context.user_data.get('mode', 'url')
 
@@ -290,7 +228,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to fetch URL: {str(e)}")
     else:
-        await update.message.reply_text("💡 Please select a mode or send a valid URL/HTML file.")
+        await update.message.reply_text("💡 Please select a mode using buttons or send a valid URL/HTML file.")
 
 # ======================== MAIN ========================
 
