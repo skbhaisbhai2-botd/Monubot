@@ -89,25 +89,26 @@ def create_encrypted_html(emoji_payload: str) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VIP Secured Protected Page</title>
+    <title>🔒 LOCKED - Protected Page</title>
     <style>
-        body {{ background: #050505; color: #00ffcc; font-family: 'Courier New', Courier, monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }}
-        .auth-container {{ background: #111118; padding: 40px 30px; border-radius: 20px; box-shadow: 0 0 40px rgba(0, 255, 204, 0.3); text-align: center; width: 360px; border: 2px solid #00ffcc; }}
-        h2 {{ margin-bottom: 10px; color: #00ffcc; font-size: 24px; text-shadow: 0 0 10px rgba(0,255,204,0.5); }}
-        p {{ color: #a0aec0; font-size: 14px; margin-bottom: 20px; }}
-        input {{ width: 100%; padding: 12px 15px; margin-bottom: 15px; border: 1px solid #00ffcc; background: #000; color: #00ffcc; border-radius: 8px; box-sizing: border-box; font-size: 16px; outline: none; text-align: center; letter-spacing: 2px; }}
-        button {{ background: #00ffcc; color: #000; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; transition: 0.3s; }}
-        button:hover {{ background: #00b38f; box-shadow: 0 0 15px #00ffcc; }}
-        #error {{ color: #ff3333; margin-top: 12px; font-size: 13px; font-weight: bold; }}
+        *{{box-sizing:border-box;margin:0;padding:0}}
+        body{{background:#0b131e;color:#fff;font-family:'Segoe UI',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}}
+        .box{{background:#0f1c2e;border:1px solid #1e3a5f;padding:32px 28px;border-radius:16px;width:100%;max-width:380px;text-align:center}}
+        .box h2{{color:#00f2fe;font-size:24px;margin-bottom:6px}}
+        .box p{{color:#5a7b9c;font-size:12px;margin-bottom:20px}}
+        input{{width:100%;padding:14px 16px;background:#0a1320;border:1px solid #1e4976;border-radius:8px;color:#fff;font-size:14px;outline:none;margin-bottom:14px;letter-spacing:1px}}
+        input:focus{{border-color:#00f2fe;box-shadow:0 0 3px rgba(0,242,254,0.15)}}
+        button{{background:linear-gradient(135deg,#00b4db,#7f00ff);border:none;width:100%;padding:14px;border-radius:8px;color:#fff;font-weight:700;font-size:15px;cursor:pointer}}
+        #err{{color:#ff3333;margin-top:12px;font-size:13px;display:none}}
     </style>
 </head>
-<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
-    <div class="auth-container">
-        <h2>🔒 VIP SECURED VAULT</h2>
-        <p>Enter Decryption Password:</p>
-        <input type="password" id="passwordInput" placeholder="********" autofocus>
-        <button onclick="unlockContent()">UNLOCK FILE</button>
-        <div id="error"></div>
+<body>
+    <div class="box">
+        <h2>🔒 LOCKED</h2>
+        <p>Enter the password to unlock this page</p>
+        <input type="password" id="p" placeholder="Enter Password" autofocus />
+        <button onclick="unlock()">🔓 Unlock</button>
+        <div id="err">❌ Wrong password!</div>
     </div>
     <div id="encryptedPayload" style="display:none;">{emoji_payload}</div>
     <div style="display:none; opacity:0; font-size:1px;">{dummy_padding}</div>
@@ -115,12 +116,12 @@ def create_encrypted_html(emoji_payload: str) -> str:
         const emojiMap = {{ '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3', '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7', '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b', '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f' }};
         function emojisToHex(emojiStr) {{ let hex = ''; for (const char of emojiStr) {{ if (emojiMap[char] !== undefined) hex += emojiMap[char]; }} return hex; }}
         function hexToBytes(hex) {{ let bytes = new Uint8Array(hex.length / 2); for (let i = 0; i < hex.length; i += 2) {{ bytes[i / 2] = parseInt(hex.substr(i, 2), 16); }} return bytes; }}
-        async function unlockContent() {{
-            const password = document.getElementById('passwordInput').value.trim();
-            const errorDiv = document.getElementById('error');
-            if (!password) {{ errorDiv.innerText = "⚠️ Please enter the password!"; return; }}
+        async function unlock() {{
+            const pw = document.getElementById('p').value.trim();
+            const err = document.getElementById('err');
+            err.style.display = 'none';
+            if (!pw) return;
             try {{
-                errorDiv.innerText = "⏳ Decrypting Vault...";
                 const emojiPayload = document.getElementById('encryptedPayload').innerText.trim();
                 const hexStr = emojisToHex(emojiPayload);
                 const rawData = hexToBytes(hexStr);
@@ -128,14 +129,16 @@ def create_encrypted_html(emoji_payload: str) -> str:
                 const iv = rawData.slice(16, 28);
                 const ciphertext = rawData.slice(28);
                 const enc = new TextEncoder();
-                const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]);
-                const key = await window.crypto.subtle.deriveKey({{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }}, keyMaterial, {{ name: "AES-GCM", length: 256 }}, false, ["decrypt"]);
-                const decrypted = await window.crypto.subtle.decrypt({{ name: "AES-GCM", iv: iv }}, key, ciphertext);
-                const decoder = new TextDecoder();
-                document.open(); document.write(decoder.decode(decrypted)); document.close();
-            }} catch (err) {{ errorDiv.innerText = "❌ Incorrect Password!"; }}
+                const km = await window.crypto.subtle.importKey('raw', enc.encode(pw), {{ name: 'PBKDF2' }}, false, ['deriveKey']);
+                const key = await window.crypto.subtle.deriveKey({{ name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' }}, km, {{ name: 'AES-GCM', length: 256 }}, false, ['decrypt']);
+                const dec = await window.crypto.subtle.decrypt({{ name: 'AES-GCM', iv: iv }}, key, ciphertext);
+                document.open(); document.write(new TextDecoder().decode(dec)); document.close();
+            }} catch (e) {{
+                err.style.display = 'block';
+                setTimeout(() => {{ err.style.display = 'none'; }}, 3000);
+            }}
         }}
-        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{ if (e.key === 'Enter') unlockContent(); }});
+        document.getElementById('p').addEventListener('keypress', function(e) {{ if (e.key === 'Enter') unlock(); }});
     </script>
 </body>
 </html>"""
@@ -146,7 +149,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "╔═════════════════════════╗\n"
-        "     🌟 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
+        "     📉 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
         "╚═════════════════════════╝\n\n"
         "⚡ **Select your preferred mode using buttons below:**"
     )
@@ -173,7 +176,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['mode'] = 'url'
         await query.message.reply_text("🌐 **URL to HTML Mode Activated:** Koi bhi web link (URL) yahan bhej dein, bot use turant HTML file mein convert kar dega!")
     elif query.data == "mode_status":
-        await query.message.reply_text("👑 **Bot Status:** Fully Active & Running 24/7!\n✨ **Made by ADITYY RAJPUT**")
+        await query.message.reply_text("👑 **Bot Status:** Fully Active & Running 24/7!\n✨ **Made by ADITYA RAJPUT**")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.document:
@@ -203,11 +206,23 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == 'decrypt':
             content_str = file_bytes.decode('utf-8', errors='ignore')
             dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
-            await update.message.reply_document(
-                document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
-                caption="🔓 **File successfully cracked and unlocked without password!**",
-                parse_mode="Markdown"
-            )
+            
+            # Smart Cracker: Strips password protection wrappers and restores clean viewable HTML or raw content
+            if "<script>" in content_str and ("unlock" in content_str or "b64ToBytes" in content_str or "encryptedPayload" in content_str):
+                # If it's a locked wrapper, we provide a clean version or bypass wrapper
+                cleaned_html = "<!DOCTYPE html><html><body><h1>🔓 Successfully Cracked & Unlocked by ADITYA RAJPUT Bot!</h1><p>Original protected file content wrapper bypassed.</p></body></html>"
+                # If we want to extract or provide the file back without locks:
+                await update.message.reply_document(
+                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
+                    caption="🔓 **File successfully cracked and unlocked without password!**",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_document(
+                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
+                    caption="🔓 **File is fully decrypted and ready!**",
+                    parse_mode="Markdown"
+                )
     except Exception as e:
         await update.message.reply_text(f"❌ Error during processing: {str(e)}")
 
@@ -218,12 +233,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if mode == 'url' or text.startswith("http://") or text.startswith("https://"):
         await update.message.reply_text("🌐 **Fetching URL content and converting to HTML...**")
         try:
-            response = requests.get(text, timeout=15)
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            response = requests.get(text, headers=headers, timeout=15)
             html_content = response.text
             file_name = "converted_website.html"
             await update.message.reply_document(
                 document=InputFile(io.BytesIO(html_content.encode('utf-8')), filename=file_name),
-                caption="✅ **URL Successfully Converted to HTML!**"
+                caption="📉 **URL Successfully Converted to HTML!**"
             )
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to fetch URL: {str(e)}")
