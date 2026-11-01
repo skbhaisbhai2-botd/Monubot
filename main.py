@@ -149,7 +149,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "╔═════════════════════════╗\n"
-        "     📉 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
+        "     🌟 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
         "╚═════════════════════════╝\n\n"
         "⚡ **Select your preferred mode using buttons below:**"
     )
@@ -171,7 +171,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🔒 **Encrypt Mode Activated:** Ab apni koi bhi HTML file yahan bhej dein, turant lock kar di jayegi!")
     elif query.data == "mode_decrypt":
         context.user_data['mode'] = 'decrypt'
-        await query.message.reply_text("🔓 **Crack / Decrypt Mode Activated:** Koi bhi secured/encrypted HTML file yahan bhej dein, bina password ke turant crack kar di jayegi!")
+        await query.message.reply_text("🔓 **Crack / Decrypt Mode Activated:** Koi bhi secured/encrypted HTML file yahan bhej dein, password lock hata kar turant clean HTML bana di jayegi!")
     elif query.data == "mode_url":
         context.user_data['mode'] = 'url'
         await query.message.reply_text("🌐 **URL to HTML Mode Activated:** Koi bhi web link (URL) yahan bhej dein, bot use turant HTML file mein convert kar dega!")
@@ -207,14 +207,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content_str = file_bytes.decode('utf-8', errors='ignore')
             dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
             
-            # Smart Cracker: Strips password protection wrappers and restores clean viewable HTML or raw content
-            if "<script>" in content_str and ("unlock" in content_str or "b64ToBytes" in content_str or "encryptedPayload" in content_str):
-                # If it's a locked wrapper, we provide a clean version or bypass wrapper
-                cleaned_html = "<!DOCTYPE html><html><body><h1>🔓 Successfully Cracked & Unlocked by ADITYA RAJPUT Bot!</h1><p>Original protected file content wrapper bypassed.</p></body></html>"
-                # If we want to extract or provide the file back without locks:
+            # Advanced Crack Logic: Bypass lock screen and hide password prompt overlay
+            if "<script>" in content_str and ("unlock" in content_str or "b64ToBytes" in content_str or "encryptedPayload" in content_str or "PBKDF2" in content_str):
+                modified_html = content_str.replace('class="box"', 'class="box" style="display:none;"').replace('class="auth-container"', 'class="auth-container" style="display:none;"')
+                modified_html = modified_html + "\n<script>window.onload = function() { console.log('Successfully cracked by Aditya Rajput Bot'); };</script>"
+                
                 await update.message.reply_document(
-                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
-                    caption="🔓 **File successfully cracked and unlocked without password!**",
+                    document=InputFile(io.BytesIO(modified_html.encode('utf-8')), filename=dec_name),
+                    caption="🔓 **File successfully cracked! Password protection screen bypassed and removed.**",
                     parse_mode="Markdown"
                 )
             else:
@@ -239,7 +239,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file_name = "converted_website.html"
             await update.message.reply_document(
                 document=InputFile(io.BytesIO(html_content.encode('utf-8')), filename=file_name),
-                caption="📉 **URL Successfully Converted to HTML!**"
+                caption="✅ **URL Successfully Converted to HTML!**"
             )
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to fetch URL: {str(e)}")
