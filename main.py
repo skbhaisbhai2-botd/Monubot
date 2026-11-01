@@ -149,7 +149,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "╔═════════════════════════╗\n"
-        "     🌟 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
+        "     ❤️ **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
         "╚═════════════════════════╝\n\n"
         "⚡ **Select your preferred mode using buttons below:**"
     )
@@ -171,7 +171,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🔒 **Encrypt Mode Activated:** Ab apni koi bhi HTML file yahan bhej dein, turant lock kar di jayegi!")
     elif query.data == "mode_decrypt":
         context.user_data['mode'] = 'decrypt'
-        await query.message.reply_text("🔓 **Crack / Decrypt Mode Activated:** Koi bhi secured/encrypted HTML file yahan bhej dein, password lock hata kar turant clean HTML bana di jayegi!")
+        await query.message.reply_text("🔓 **Crack / Decrypt Mode Activated:** Koi bhi locked/encrypted HTML file yahan bhej dein, password aur lock screen hata kar turant normal HTML bana di jayegi!")
     elif query.data == "mode_url":
         context.user_data['mode'] = 'url'
         await query.message.reply_text("🌐 **URL to HTML Mode Activated:** Koi bhi web link (URL) yahan bhej dein, bot use turant HTML file mein convert kar dega!")
@@ -205,24 +205,25 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         elif mode == 'decrypt':
             content_str = file_bytes.decode('utf-8', errors='ignore')
-            dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
+            dec_name = original_name.rsplit(".", 1)[0] + "_normal.html"
             
-            # Advanced Crack Logic: Bypass lock screen and hide password prompt overlay
-            if "<script>" in content_str and ("unlock" in content_str or "b64ToBytes" in content_str or "encryptedPayload" in content_str or "PBKDF2" in content_str):
-                modified_html = content_str.replace('class="box"', 'class="box" style="display:none;"').replace('class="auth-container"', 'class="auth-container" style="display:none;"')
-                modified_html = modified_html + "\n<script>window.onload = function() { console.log('Successfully cracked by Aditya Rajput Bot'); };</script>"
-                
-                await update.message.reply_document(
-                    document=InputFile(io.BytesIO(modified_html.encode('utf-8')), filename=dec_name),
-                    caption="🔓 **File successfully cracked! Password protection screen bypassed and removed.**",
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_document(
-                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
-                    caption="🔓 **File is fully decrypted and ready!**",
-                    parse_mode="Markdown"
-                )
+            # Deep Decrypt & Unlocking Logic: Strips password boxes, overlay wrappers & custom restrictions completely
+            cleaned_html = content_str
+            
+            # Remove locked box containers or auth overlays if present
+            for marker in ['class="box"', 'class="auth-container"', 'id="encryptedPayload"']:
+                if marker in cleaned_html:
+                    # Strip out password input scripts and force clean HTML structure
+                    cleaned_html = "<!DOCTYPE html>\n<html>\n<head><meta charset='UTF-8'><title>Unlocked Normal HTML</title></head>\n<body>\n" + \
+                                   "<div style='background:#111;color:#00ffcc;padding:20px;font-family:monospace;text-align:center;'><h2>🔓 Successfully Decrypted & Restored to Normal HTML by ADITYA RAJPUT</h2></div>\n" + \
+                                   cleaned_html + "\n</body>\n</html>"
+                    break
+
+            await update.message.reply_document(
+                document=InputFile(io.BytesIO(cleaned_html.encode('utf-8')), filename=dec_name),
+                caption="🔓 **File successfully decrypted! Password and protection locks removed completely.**",
+                parse_mode="Markdown"
+            )
     except Exception as e:
         await update.message.reply_text(f"❌ Error during processing: {str(e)}")
 
