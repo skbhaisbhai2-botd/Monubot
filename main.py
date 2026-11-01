@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from flask import Flask
 
 # ================= CONFIGURATION =================
-TELEGRAM_BOT_TOKEN = "9273643977:AAFXKfu00kWAhnWm_BpIh9QmUUo3GcgglaU"
+TELEGRAM_BOT_TOKEN = "9049113310:AAFP661C574cT-VFATPL40_LNrPHgac3zxM"
 CHANNEL_SIGNATURE = "sk"
 # =================================================
 
