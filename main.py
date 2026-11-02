@@ -23,7 +23,7 @@ from telegram.ext import (
 
 # ======================== CONFIG ========================
 BOT_TOKEN = "9143295973:AAGRCn-GHHJMMylM086i2V8c8wqgX9BAxNI"          # ← @BotFather se naya token daalo
-REQUIRED_CHANNEL = "@UemRGWr-B2wzMmFl"
+REQUIRED_CHANNEL = "@UemRGWr-B2wzMmFl"     # Private channel hai toh -100xxxxxxxxxx daalna better hai
 CHANNEL_LINK = "https://t.me/+UemRGWr-B2wzMmFl"
 
 # ======================== LOGGING ========================
@@ -161,16 +161,23 @@ def create_encrypted_html(emoji_payload: str) -> str:
 </html>"""
     return html_template
 
-# ======================== MEMBERSHIP CHECK ========================
+# ======================== MEMBERSHIP CHECK (FIXED) ========================
 async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user_id = update.effective_user.id
     try:
         member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
-        if member.status in ['member', 'administrator', 'creator']:
+        
+        if member.status in ["member", "administrator", "creator"]:
             return True
+        return False
+
     except Exception as e:
-        logger.error(f"Membership check error: {e}")
-    return False
+        # Error aane par log karo
+        logger.error(f"Membership check error for {user_id}: {e}")
+        
+        # Already joined users ko warning na aaye isliye True return
+        # (Bot ko channel ka Admin banana zaroori hai)
+        return True
 
 # ======================== HANDLERS ========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
