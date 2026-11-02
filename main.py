@@ -2,6 +2,8 @@ import os
 import logging
 import time
 import base64
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from io import BytesIO
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
@@ -16,6 +18,20 @@ from transformers import AutoImageProcessor, UperNetForSemanticSegmentation
 TOKEN = "9143295973:AAGRCn-GHHJMMylM086i2V8c8wqgX9BAxNI"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ---------- RENDER WEB PORT FIX ----------
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
 
 # ---------- LOAD MODELS ----------
 logger.info("🔥 DAS Loading segmentation model...")
@@ -96,7 +112,6 @@ async def handle_image(update: Update, context: CallbackContext):
     file = await photo.get_file()
     image_bytes = await file.download_as_bytearray()
     
-    # Live loading messages
     msg = await update.message.reply_text(
         "⏳ **DAS PROCESSING...**\n"
         "🔍 Detecting garments...\n"
@@ -130,6 +145,9 @@ async def button_callback(update: Update, context: CallbackContext):
 
 # ---------- MAIN ----------
 def main():
+    # Start health check server for Render port binding
+    threading.Thread(target=run_health_server, daemon=True).start()
+
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_image))
