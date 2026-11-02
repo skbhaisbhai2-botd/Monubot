@@ -1,4 +1,9 @@
 python-telegram-bot
-requests
-flask
-cryptography
+Pillow
+opencv-python-headless
+numpy
+torch
+diffusers
+transformers
+accelerate
+safetensors
