@@ -1,9 +1,2 @@
-python-telegram-bot
-Pillow
-opencv-python-headless
-numpy
-torch
-diffusers
-transformers
-accelerate
-safetensors
+python-telegram-bot==20.7
+aiohttp==3.9.1
