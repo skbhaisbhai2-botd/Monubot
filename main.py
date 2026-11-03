@@ -2,9 +2,26 @@ import asyncio
 import aiohttp
 import sqlite3
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
+
+# Dummy HTTP Server to satisfy Render Web Service port requirement
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+
+def run_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    server.serve_forever()
+
+# Start dummy server in a background thread
+threading.Thread(target=run_server, daemon=True).start()
 
 # Bot Configuration
 TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
@@ -159,7 +176,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🚀 **BOMBING STARTED** 🚀\n\n"
             f"🎯 Target: `{phone}`\n"
             f"⚡ Status: Running...\n\n"
-            f"🛑 Rokne ke liye **stop** bhejein ya niche button dabayein.",
+            f"🛑 Rokne के liye **stop** bhejein ya niche button dabayein.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
         )
         
