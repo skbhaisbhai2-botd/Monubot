@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -197,7 +198,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption=f"✅ Enhanced!\nMode: {mode.upper()} | Resolution: {resolution.upper()}"
             )
 
-        # Cleanup
         Path(input_path).unlink(missing_ok=True)
         Path(output_path).unlink(missing_ok=True)
 
@@ -207,6 +207,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    # Event loop fix for Render
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -215,7 +222,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot starting...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
