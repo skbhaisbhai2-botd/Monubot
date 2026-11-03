@@ -14,9 +14,9 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import cv2
 import numpy as np
 
-# ====================== TOKEN YAHAN DALO ======================
-BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
-# =============================================================
+# ====================== TOKEN ======================
+BOT_TOKEN = "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo"
+# ===================================================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
