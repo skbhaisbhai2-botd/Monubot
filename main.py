@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
 # Bot Configuration
-TOKEN = "9138425561:AAES9f2Ioj_ya-I_vXKIABeON7kFRTi543Q"
+TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
 OWNER_CHAT_ID = 6684734209
 
 # API
