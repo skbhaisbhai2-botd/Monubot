@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 # ====================== TOKEN YAHAN DALO ======================
-BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"   # ← BotFather se token yahan paste karo
+BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
 # =============================================================
 
 logging.basicConfig(
@@ -207,10 +207,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    if BOT_TOKEN == "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s":
-        print("❌ Pehle BOT_TOKEN set karo!")
-        return
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
