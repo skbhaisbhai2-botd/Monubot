@@ -34,43 +34,43 @@ class UltraPhotoEnhancer:
         self.cv_img = cv2.cvtColor(np.array(self.img), cv2.COLOR_RGB2BGR)
 
     def restore_old_photo(self):
-        denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 8, 8, 7, 21)
+        denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 6, 6, 7, 21)
         lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
         l = clahe.apply(l)
         lab = cv2.merge([l, a, b])
         restored = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-        kernel = np.array([[0, -0.6, 0], [-0.6, 3.4, -0.6], [0, -0.6, 0]])
-        restored = cv2.filter2D(restored, -1, kernel)
         self.cv_img = restored
         self.img = Image.fromarray(cv2.cvtColor(restored, cv2.COLOR_BGR2RGB))
         return self
 
-    def enhance_face_body_color(self, factor=1.25):
+    def enhance_face_body_color(self, factor=1.12):
         self.img = ImageEnhance.Color(self.img).enhance(factor)
-        self.img = ImageEnhance.Contrast(self.img).enhance(1.18)
-        self.img = ImageEnhance.Brightness(self.img).enhance(1.08)
+        self.img = ImageEnhance.Contrast(self.img).enhance(1.10)
+        self.img = ImageEnhance.Brightness(self.img).enhance(1.04)
         return self
 
     def enhance_clothes_detail(self):
-        self.img = ImageEnhance.Sharpness(self.img).enhance(1.65)
-        self.img = self.img.filter(ImageFilter.DETAIL)
-        self.img = self.img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        # Soft sharpen only (artifacts nahi aayenge)
+        self.img = ImageEnhance.Sharpness(self.img).enhance(1.30)
         return self
 
-    def cinematic_look(self, intensity=0.75):
+    def cinematic_look(self, intensity=0.40):
         img = np.array(self.img).astype(np.float32) / 255.0
         r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
-        r = np.clip(r * 1.05 + 0.02, 0, 1)
-        g = np.clip(g * 0.98, 0, 1)
-        b = np.clip(b * 1.08 - 0.015, 0, 1)
+
+        r = np.clip(r * 1.03 + 0.01, 0, 1)
+        g = np.clip(g * 0.99, 0, 1)
+        b = np.clip(b * 1.04 - 0.008, 0, 1)
+
         rows, cols = img.shape[:2]
         X = np.linspace(-1, 1, cols)
         Y = np.linspace(-1, 1, rows)
         X, Y = np.meshgrid(X, Y)
-        vignette = 1 - (X**2 + Y**2) * 0.28 * intensity
-        vignette = np.clip(vignette, 0.55, 1.0)
+        vignette = 1 - (X**2 + Y**2) * 0.15 * intensity
+        vignette = np.clip(vignette, 0.75, 1.0)
+
         cinematic = np.stack([r, g, b], axis=2) * vignette[:, :, np.newaxis]
         self.img = Image.fromarray(np.clip(cinematic * 255, 0, 255).astype(np.uint8))
         return self
@@ -82,31 +82,33 @@ class UltraPhotoEnhancer:
         ratio = min(new_w / w, new_h / h)
         new_size = (int(w * ratio), int(h * ratio))
         self.img = self.img.resize(new_size, Image.Resampling.LANCZOS)
-        self.img = ImageEnhance.Sharpness(self.img).enhance(1.25)
+        self.img = ImageEnhance.Sharpness(self.img).enhance(1.15)
         return self
 
-    def clean_background(self, strength=0.6):
+    def clean_background(self, strength=0.30):
         img = np.array(self.img)
-        blurred = cv2.bilateralFilter(img, 9, 55, 55)
-        result = cv2.addWeighted(img, 1 - strength * 0.4, blurred, strength * 0.4, 0)
+        blurred = cv2.bilateralFilter(img, 7, 40, 40)
+        result = cv2.addWeighted(img, 1 - strength, blurred, strength, 0)
         self.img = Image.fromarray(result)
         return self
 
     def full_pipeline(self, mode="cinematic", resolution="4k"):
         self.restore_old_photo()
-        self.enhance_face_body_color(1.22 if mode != "vintage" else 1.08)
+        self.enhance_face_body_color(1.12 if mode != "vintage" else 1.05)
         self.enhance_clothes_detail()
-        self.clean_background(0.55)
+        self.clean_background(0.30)
 
         if mode == "cinematic":
-            self.cinematic_look(0.8)
-        elif mode == "vintage":
-            self.img = ImageEnhance.Color(self.img).enhance(0.85)
-            self.img = ImageOps.autocontrast(self.img, cutoff=1)
-        elif mode == "ultra":
-            self.img = ImageEnhance.Color(self.img).enhance(1.35)
-            self.img = ImageEnhance.Sharpness(self.img).enhance(1.9)
             self.cinematic_look(0.45)
+        elif mode == "vintage":
+            self.img = ImageEnhance.Color(self.img).enhance(0.88)
+            self.img = ImageOps.autocontrast(self.img, cutoff=0.5)
+        elif mode == "ultra":
+            self.img = ImageEnhance.Color(self.img).enhance(1.18)
+            self.img = ImageEnhance.Sharpness(self.img).enhance(1.40)
+            self.cinematic_look(0.30)
+        elif mode == "natural":
+            pass
 
         self.upscale(resolution)
         return self.img
@@ -207,7 +209,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    # Event loop fix for Render
     try:
         asyncio.get_running_loop()
     except RuntimeError:
