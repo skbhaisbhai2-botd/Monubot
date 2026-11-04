@@ -12,7 +12,7 @@ import requests
 # ===============================
 # 🔧 BOT CONFIGURATION
 # ===============================
-BOT_TOKEN = "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo"
+BOT_TOKEN = "9226775583:AAGpxycWwHrmAUjBvVPmFvmRinvT3TRiDzg"
 ADMIN_ID = 7741897793
 CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
