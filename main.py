@@ -296,7 +296,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================== MAIN ========================
 
 def main():
-    if BOT_TOKEN == "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo":
+    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ ERROR: Bot Token set karo!")
         return
 
