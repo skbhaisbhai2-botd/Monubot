@@ -1,229 +1,314 @@
 import os
+import io
 import logging
-import asyncio
-from pathlib import Path
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import threading
+import random
+import string
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+from telegram import Update, InputFile
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-import cv2
-import numpy as np
 
-# ====================== TOKEN ======================
+# ======================== CONFIG ========================
 BOT_TOKEN = "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo"
-# ===================================================
 
+# ======================== LOGGING ========================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# ======================== RENDER WEB PORT FIX ========================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+    
+    def log_message(self, format, *args):
+        pass
 
-# ====================== PHOTO ENHANCER CLASS ======================
-class UltraPhotoEnhancer:
-    def __init__(self, image_path: str):
-        self.original = Image.open(image_path).convert("RGB")
-        self.img = self.original.copy()
-        self.cv_img = cv2.cvtColor(np.array(self.img), cv2.COLOR_RGB2BGR)
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
 
-    def restore_old_photo(self):
-        denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 6, 6, 7, 21)
-        lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
-        l = clahe.apply(l)
-        lab = cv2.merge([l, a, b])
-        restored = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-        self.cv_img = restored
-        self.img = Image.fromarray(cv2.cvtColor(restored, cv2.COLOR_BGR2RGB))
-        return self
+# ======================== EMOJI CIPHER MAPPING ========================
+EMOJI_MAP = {
+    '0': '🍎', '1': '🍌', '2': '🍒', '3': '🍇',
+    '4': '🍉', '5': '🍊', '6': '🍋', '7': '🍍',
+    '8': '🍑', '9': '🥝', 'a': '🥥', 'b': '🍅',
+    'c': '🍆', 'd': '🥑', 'e': '🥦', 'f': '🥕'
+}
 
-    def enhance_face_body_color(self, factor=1.12):
-        self.img = ImageEnhance.Color(self.img).enhance(factor)
-        self.img = ImageEnhance.Contrast(self.img).enhance(1.10)
-        self.img = ImageEnhance.Brightness(self.img).enhance(1.04)
-        return self
+def data_to_emojis(data: bytes) -> str:
+    hex_str = data.hex()
+    return ''.join(EMOJI_MAP[c] for c in hex_str)
 
-    def enhance_clothes_detail(self):
-        # Soft sharpen only (artifacts nahi aayenge)
-        self.img = ImageEnhance.Sharpness(self.img).enhance(1.30)
-        return self
+# ======================== CRYPTO FUNCTIONS ========================
 
-    def cinematic_look(self, intensity=0.40):
-        img = np.array(self.img).astype(np.float32) / 255.0
-        r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
-
-        r = np.clip(r * 1.03 + 0.01, 0, 1)
-        g = np.clip(g * 0.99, 0, 1)
-        b = np.clip(b * 1.04 - 0.008, 0, 1)
-
-        rows, cols = img.shape[:2]
-        X = np.linspace(-1, 1, cols)
-        Y = np.linspace(-1, 1, rows)
-        X, Y = np.meshgrid(X, Y)
-        vignette = 1 - (X**2 + Y**2) * 0.15 * intensity
-        vignette = np.clip(vignette, 0.75, 1.0)
-
-        cinematic = np.stack([r, g, b], axis=2) * vignette[:, :, np.newaxis]
-        self.img = Image.fromarray(np.clip(cinematic * 255, 0, 255).astype(np.uint8))
-        return self
-
-    def upscale(self, target="4k"):
-        w, h = self.img.size
-        sizes = {"1080p": (1920, 1080), "2k": (2560, 1440), "4k": (3840, 2160)}
-        new_w, new_h = sizes.get(target, (3840, 2160))
-        ratio = min(new_w / w, new_h / h)
-        new_size = (int(w * ratio), int(h * ratio))
-        self.img = self.img.resize(new_size, Image.Resampling.LANCZOS)
-        self.img = ImageEnhance.Sharpness(self.img).enhance(1.15)
-        return self
-
-    def clean_background(self, strength=0.30):
-        img = np.array(self.img)
-        blurred = cv2.bilateralFilter(img, 7, 40, 40)
-        result = cv2.addWeighted(img, 1 - strength, blurred, strength, 0)
-        self.img = Image.fromarray(result)
-        return self
-
-    def full_pipeline(self, mode="cinematic", resolution="4k"):
-        self.restore_old_photo()
-        self.enhance_face_body_color(1.12 if mode != "vintage" else 1.05)
-        self.enhance_clothes_detail()
-        self.clean_background(0.30)
-
-        if mode == "cinematic":
-            self.cinematic_look(0.45)
-        elif mode == "vintage":
-            self.img = ImageEnhance.Color(self.img).enhance(0.88)
-            self.img = ImageOps.autocontrast(self.img, cutoff=0.5)
-        elif mode == "ultra":
-            self.img = ImageEnhance.Color(self.img).enhance(1.18)
-            self.img = ImageEnhance.Sharpness(self.img).enhance(1.40)
-            self.cinematic_look(0.30)
-        elif mode == "natural":
-            pass
-
-        self.upscale(resolution)
-        return self.img
+def derive_key(password: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+        backend=default_backend()
+    )
+    return kdf.derive(password.encode("utf-8"))
 
 
-# ====================== BOT HANDLERS ======================
+def encrypt_data(plaintext: bytes, password: str) -> bytes:
+    salt = os.urandom(16)
+    key = derive_key(password, salt)
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    return salt + nonce + ciphertext
+
+
+def generate_secure_password() -> str:
+    chars = string.ascii_letters + string.digits + "@#$%"
+    return "".join(random.choice(chars) for _ in range(8))
+
+
+def create_encrypted_html(emoji_payload: str) -> str:
+    html_template = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secured HTML File</title>
+    <style>
+        body {
+            background: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .auth-container {
+            background: #1e293b;
+            padding: 35px 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            text-align: center;
+            width: 340px;
+            border: 1px solid #334155;
+        }
+        h2 { margin-bottom: 10px; color: #38bdf8; font-size: 22px; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #fff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: #38bdf8; }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #1d4ed8; }
+        #error { color: #ef4444; margin-top: 12px; font-size: 13px; font-weight: 500; }
+    </style>
+</head>
+<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
+    <div class="auth-container">
+        <h2>🔒 Secured Page</h2>
+        <p>Enter password to unlock:</p>
+        <input type="password" id="passwordInput" placeholder="Enter Password" autofocus>
+        <button onclick="unlockContent()">Unlock File</button>
+        <div id="error"></div>
+    </div>
+
+    <script>
+        const emojiMap = {
+            '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3',
+            '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7',
+            '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b',
+            '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f'
+        };
+
+        function emojisToHex(emojiStr) {
+            let hex = '';
+            for (let char of emojiStr) {
+                if (emojiMap[char] !== undefined) {
+                    hex += emojiMap[char];
+                }
+            }
+            return hex;
+        }
+
+        function hexToBytes(hex) {
+            let bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+            }
+            return bytes;
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
+                (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        async function unlockContent() {
+            const password = document.getElementById('passwordInput').value;
+            const errorDiv = document.getElementById('error');
+            
+            if (!password) {
+                errorDiv.innerText = "⚠️ Please enter the password!";
+                return;
+            }
+
+            try {
+                errorDiv.innerText = "⏳ Decrypting...";
+                const emojiPayload = "REPLACE_EMOJI_PAYLOAD";
+                const hexStr = emojisToHex(emojiPayload);
+                const rawData = hexToBytes(hexStr);
+
+                const salt = rawData.slice(0, 16);
+                const iv = rawData.slice(16, 28);
+                const ciphertext = rawData.slice(28);
+
+                const enc = new TextEncoder();
+                const keyMaterial = await window.crypto.subtle.importKey(
+                    "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+                );
+                
+                const key = await window.crypto.subtle.deriveKey(
+                    { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+                    keyMaterial,
+                    { name: "AES-GCM", length: 256 },
+                    false,
+                    ["decrypt"]
+                );
+
+                const decrypted = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv }, key, ciphertext
+                );
+
+                const decoder = new TextDecoder();
+                const htmlContent = decoder.decode(decrypted);
+
+                document.open();
+                document.write(htmlContent);
+                document.close();
+            } catch (err) {
+                errorDiv.innerText = "❌ Incorrect Password!";
+            }
+        }
+
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') unlockContent();
+        });
+    </script>
+</body>
+</html>"""
+    return html_template.replace("REPLACE_EMOJI_PAYLOAD", emoji_payload)
+
+
+# ======================== BOT HANDLERS ========================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "👋 **Ultra HD Photo Enhancer Bot**\n\n"
-        "Bas photo bhejo, main usko:\n"
-        "• Old / phati photo restore karunga\n"
-        "• Face + Body color HD banunga\n"
-        "• Kapde detail deep karunga\n"
-        "• Full Cinematic look dunga\n"
-        "• 1080p / 2K / 4K mein upscale karunga\n\n"
-        "Photo bhejne ke baad mode choose kar lena."
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🔐 <b>ADITYA RAJPUT EMOJI ENCRYPTOR</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "• Koi bhi <b>HTML file</b> seedha yahan bhej do!\n"
+        "• Bot turant 2 second mein auto-password ke sath encrypt kar dega.\n"
+        "• Poora code **Emojis** mein locked milega! 🍎🍌🍒"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Sirf photo bhejo.\n"
-        "Phir mode choose karo:\n"
-        "• Cinematic (recommended)\n"
-        "• Ultra Sharp\n"
-        "• Vintage Restore\n"
-        "• Natural"
-    )
-
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo = update.message.photo[-1]
-    file = await context.bot.get_file(photo.file_id)
-
-    user_id = update.effective_user.id
-    input_path = f"temp_{user_id}_input.jpg"
-    await file.download_to_drive(input_path)
-
-    context.user_data["input_path"] = input_path
-
-    keyboard = [
-        [
-            InlineKeyboardButton("🎬 Cinematic 4K", callback_data="cinematic_4k"),
-            InlineKeyboardButton("⚡ Ultra 4K", callback_data="ultra_4k"),
-        ],
-        [
-            InlineKeyboardButton("📜 Vintage 4K", callback_data="vintage_4k"),
-            InlineKeyboardButton("🌿 Natural 4K", callback_data="natural_4k"),
-        ],
-        [
-            InlineKeyboardButton("🎬 Cinematic 1080p", callback_data="cinematic_1080p"),
-            InlineKeyboardButton("⚡ Ultra 1080p", callback_data="ultra_1080p"),
-        ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "Photo mil gayi ✅\nAb mode choose karo:",
-        reply_markup=reply_markup
-    )
-
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    data = query.data
-    mode, resolution = data.split("_")
-
-    input_path = context.user_data.get("input_path")
-    if not input_path or not Path(input_path).exists():
-        await query.edit_message_text("Pehle photo bhejo!")
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.document:
+        await update.message.reply_text("❌ Please send an HTML file.")
         return
 
-    await query.edit_message_text(f"⏳ Processing... Mode: {mode.upper()} | {resolution.upper()}\nThoda time lagega...")
+    file = await update.message.document.get_file()
+    file_bytes = await file.download_as_bytearray()
+    original_name = update.message.document.file_name or "file.html"
 
     try:
-        enhancer = UltraPhotoEnhancer(input_path)
-        result = enhancer.full_pipeline(mode=mode, resolution=resolution)
+        password = generate_secure_password()
+        encrypted_bytes = encrypt_data(bytes(file_bytes), password)
+        emoji_payload = data_to_emojis(encrypted_bytes)
+        html_wrapper = create_encrypted_html(emoji_payload)
+        
+        enc_name = original_name.rsplit(".", 1)[0] + "_emoji_secured.html"
+        file_size_kb = len(html_wrapper.encode('utf-8')) / 1024
 
-        output_path = f"temp_{query.from_user.id}_output.jpg"
-        result.save(output_path, quality=95)
-
-        with open(output_path, "rb") as f:
-            await context.bot.send_photo(
-                chat_id=query.message.chat_id,
-                photo=f,
-                caption=f"✅ Enhanced!\nMode: {mode.upper()} | Resolution: {resolution.upper()}"
-            )
-
-        Path(input_path).unlink(missing_ok=True)
-        Path(output_path).unlink(missing_ok=True)
-
+        await update.message.reply_document(
+            document=InputFile(io.BytesIO(html_wrapper.encode('utf-8')), filename=enc_name),
+            caption=(
+                f"✅ <b>Instant Encryption Successful!</b>\n\n"
+                f"📁 File: <code>{enc_name}</code>\n"
+                f"📦 Size: {file_size_kb:.1f} KB\n\n"
+                f"🔑 <b>Auto Password:</b> <code>{password}</code>\n\n"
+                f"🛡️ <b>Protected with:</b>\n"
+                f"• AES-256-GCM + PBKDF2\n"
+                f"• 🍎 Emoji Cipher Payload\n"
+                f"• Keyboard & Copy Block\n\n"
+                f"<b>Made by ADITYA RAJPUT</b>"
+            ),
+            parse_mode="HTML"
+        )
     except Exception as e:
-        logger.error(e)
-        await query.edit_message_text(f"❌ Error: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
 
+
+# ======================== MAIN ========================
 
 def main():
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    if BOT_TOKEN == "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo":
+        print("❌ ERROR: Bot Token set karo!")
+        return
+
+    threading.Thread(target=run_health_server, daemon=True).start()
 
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
 
-    print("Bot starting...")
-    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    print("🚀 ADITYA RAJPUT Emoji Encryptor Bot Started...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
