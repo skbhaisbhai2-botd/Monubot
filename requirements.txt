@@ -1,5 +1,2 @@
-python-telegram-bot==21.6
-Pillow>=10.3.0
-opencv-python>=4.9.0
-numpy>=1.26.0
-tqdm>=4.66.0
+python-telegram-bot
+cryptography
