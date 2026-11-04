@@ -7,13 +7,15 @@ from datetime import datetime
 from telebot import types
 import json
 import os
+import requests
 
 # ===============================
 # 🔧 BOT CONFIGURATION
 # ===============================
-BOT_TOKEN = "9226775583:AAGpxycWwHrmAUjBvVPmFvmRinvT3TRiDzg"
+BOT_TOKEN = "9192618748:AAHFPOL9fYaGWwH48fGElH6khTD-s0jZlTo"
 ADMIN_ID = 7741897793
 CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
+API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
@@ -25,28 +27,44 @@ user_channels = {}
 DATA_FILE = "prediction_history.json"
 
 # ===============================
-# 🔮 HIGH-LEVEL PREDICTION ENGINE
+# 🔄 LIVE API GAME PERIOD FETCHER
 # ===============================
-def generate_high_level_prediction():
+def fetch_live_game_period():
     """
-    Advanced logic to pick BIG / SMALL and exact number (0-9)
-    with optimized distribution for winning accuracy.
+    API se latest issue number fetch karta hai aur usme +1 karke 
+    current/next exact game period return karta hai.
     """
-    num = random.randint(0, 9)
-    if num >= 5:
-        big_small = "🔴 BIG"
-        size_type = "BIG"
-    else:
-        big_small = "🔵 SMALL"
-        size_type = "SMALL"
-    return big_small, size_type, num
-
-def get_period_number():
+    try:
+        response = requests.get(f"{API_URL}?pageNo=1&pageSize=1&ts={int(time.time()*1000)}", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            # API response se list ya records extract karna
+            list_data = data.get("data", {}).get("list", []) or data.get("list", [])
+            if list_data and len(list_data) > 0:
+                latest_issue = str(list_data[0].get("issueNumber") or list_data[0].get("issue") or "")
+                if latest_issue:
+                    # Latest issue me +1 karke active period nikalna
+                    return str(int(latest_issue) + 1)
+    except Exception as e:
+        print(f"[!] API fetch error: {e}")
+    
+    # Fallback agar API fail ho jaye toh time-based calculation
     ist = pytz.timezone("Asia/Kolkata")
     now = datetime.now(ist)
     yyyyMMdd = now.strftime("%Y%m%d")
     total_minutes = now.hour * 60 + now.minute
     return f"{yyyyMMdd}1000{10001 + total_minutes}"
+
+# ===============================
+# 🔮 HIGH-LEVEL PREDICTION ENGINE
+# ===============================
+def generate_high_level_prediction():
+    num = random.randint(0, 9)
+    if num >= 5:
+        big_small = "🔴 BIG"
+    else:
+        big_small = "🔵 SMALL"
+    return big_small, num
 
 def get_remaining_seconds():
     ist = pytz.timezone("Asia/Kolkata")
@@ -119,11 +137,13 @@ def prediction_worker(chat_id, channel_id=None):
             except:
                 pass
 
-        period = get_period_number()
+        # API se exact live period fetch karna
+        period = fetch_live_game_period()
+        
         if period != last_period:
-            big_small, size_type, num = generate_high_level_prediction()
+            big_small, num = generate_high_level_prediction()
             
-            # Send Prediction Signal
+            # Send Prediction Signal with Copy Button & Channel Link
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"))
             markup.add(types.InlineKeyboardButton("📢 Official Channel", url=CHANNEL_LINK))
@@ -186,7 +206,7 @@ def start_command(msg):
     welcome_text = (
         f"🌟 *WELCOME TO ADITYA RAJPUT VIP BOT* 🌟\n\n"
         f"💎 *High-Accuracy Wingo Prediction System*\n"
-        f"🔥 Features: Game Period Tracking, Auto 10-Round Cycles, Live History & Smart Analytics.\n\n"
+        f"🔥 Features: Live API Game Period Tracking, Auto 10-Round Cycles, Live History & Smart Analytics.\n\n"
         f"🔗 [Join Official VIP Channel]({CHANNEL_LINK})\n\n"
         f"👇 Choose an option from below to get started:"
     )
@@ -207,7 +227,7 @@ def message_router(msg):
         bot.send_message(
             cid,
             f"🚀 *ADITYA RAJPUT AI Engine Activated!*\n\n"
-            f"📡 Status: Running\n"
+            f"📡 Status: Running with Live API Period Sync\n"
             f"{'📢 Linked Channel: ' + str(ch) if ch else '💬 Mode: Direct Chat Only'}",
             reply_markup=main_control_menu()
         )
@@ -222,7 +242,7 @@ def message_router(msg):
             cid,
             "📢 Please send your **Channel Username** (e.g., `@yourchannel`) or **Channel ID** (e.g., `-100xxxxxxxxxx`).\n\n"
             "⚠️ *Note: Ensure this bot is added as an Admin in your channel.*",
-            parse_M=True
+            parse_mode="Markdown"
         )
         user_channels[cid] = "waiting_channel"
 
@@ -262,5 +282,5 @@ def callback_copy(call):
 # 🚀 RUN DIRECT PREDICTION BOT
 # ===============================
 if __name__ == "__main__":
-    print("👑 ADITYA RAJPUT Direct Prediction Bot Running...")
+    print("👑 ADITYA RAJPUT Direct Prediction Bot with Live API Period Running...")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
