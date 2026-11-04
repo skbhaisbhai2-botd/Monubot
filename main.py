@@ -202,7 +202,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
 
             try {{
                 errorDiv.innerText = "⏳ Decrypting Vault...";
-                const emojiPayload = document.getElementById('encryptedPayload').innerText.trim();
+                const emojiPayload = document.getElementById('encryptedPayload').textContent.trim();
                 const hexStr = emojisToHex(emojiPayload);
                 const rawData = hexToBytes(hexStr);
 
