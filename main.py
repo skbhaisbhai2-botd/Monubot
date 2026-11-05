@@ -22,14 +22,14 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 # ===============================
 active_dict = {}
 user_channels = {}
-last_sent_period = {}          # Strong double prevention
+last_sent_period = {}
 DATA_FILE = "prediction_history.json"
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 # ===============================
-# 🔮 PERIOD ENGINE
+# 🔮 PERIOD + REAL RESULT
 # ===============================
-def get_real_period_from_api():
+def get_api_data():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
@@ -37,22 +37,23 @@ def get_real_period_from_api():
         "Origin": "https://draw.ar-lottery01.com"
     }
     try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time()*1000)), headers=headers, timeout=6)
+        r = requests.get(API_URL + "?t=" + str(int(time.time()*1000)), headers=headers, timeout=7)
         if r.status_code == 200:
             data = r.json()
             if data.get("code") == 0 and data.get("data", {}).get("list"):
-                latest = data["data"]["list"][0]["issueNumber"]
-                return str(int(latest) + 1)
+                return data["data"]["list"]
     except Exception as e:
         print(f"[API] {e}")
     return None
 
 
-def get_period_number():
-    real = get_real_period_from_api()
-    if real:
-        return real
+def get_next_period():
+    lst = get_api_data()
+    if lst:
+        latest = lst[0]["issueNumber"]
+        return str(int(latest) + 1)
 
+    # Fallback UTC
     now = datetime.now(timezone.utc)
     y = now.strftime("%Y")
     m = now.strftime("%m")
@@ -62,13 +63,27 @@ def get_period_number():
     return f"{y}{m}{d}10001{str(period_idx).zfill(4)}"
 
 
+def get_real_result(period):
+    """Wait and fetch real result of a specific period"""
+    for _ in range(12):          # max 12 tries (\~1 minute)
+        lst = get_api_data()
+        if lst:
+            for item in lst:
+                if item["issueNumber"] == period:
+                    num = int(item["number"])
+                    size = "BIG" if num >= 5 else "SMALL"
+                    return num, size
+        time.sleep(5)
+    return None, None
+
+
 def get_remaining_seconds():
     now = datetime.now(timezone.utc)
-    return max(2, 60 - now.second)
+    return max(3, 60 - now.second)
 
 
 # ===============================
-# 🎯 PREDICTION (Only 1 Number)
+# 🎯 PREDICTION (1 Number only)
 # ===============================
 def generate_prediction(period: str):
     try:
@@ -91,7 +106,7 @@ def generate_prediction(period: str):
 
 
 # ===============================
-# 📊 HISTORY (Clean + No Double)
+# 📊 HISTORY
 # ===============================
 def load_json_data():
     if not os.path.exists(DATA_FILE):
@@ -112,7 +127,7 @@ def log_prediction(period, pred_text, result_text, status):
     data = load_json_data()
     history = data.get("history", [])
 
-    # Prevent double entry of same period
+    # Prevent same period double entry
     if history and history[0].get("period") == period:
         return
 
@@ -142,19 +157,18 @@ def update_user_activity(user_id):
 
 
 # ===============================
-# 🚀 WORKER (No Double + 24h Stable)
+# 🚀 WORKER (Real Result)
 # ===============================
 def prediction_worker(chat_id, channel_id=None):
     prediction_count = 0
 
     while active_dict.get(chat_id):
         try:
-            # Cool-down after 10 predictions
             if prediction_count >= 10:
                 try:
                     bot.send_message(chat_id,
                         "⏳ *10 Predictions Completed*\n\n"
-                        "🛡️ Taking 20-minute safety cool-down...",
+                        "🛡️ 20-minute safety cool-down...",
                         parse_mode="Markdown")
                 except:
                     pass
@@ -170,9 +184,9 @@ def prediction_worker(chat_id, channel_id=None):
                 except:
                     pass
 
-            period = get_period_number()
+            period = get_next_period()
 
-            # ========== STRONG DOUBLE PREVENTION ==========
+            # Double prevention
             if last_sent_period.get(chat_id) == period:
                 remaining = get_remaining_seconds()
                 for _ in range(remaining):
@@ -180,7 +194,6 @@ def prediction_worker(chat_id, channel_id=None):
                         return
                     time.sleep(1)
                 continue
-            # ==============================================
 
             emoji, size, num = generate_prediction(period)
             pred_text = f"{emoji} – {num}"
@@ -204,30 +217,38 @@ def prediction_worker(chat_id, channel_id=None):
                 if channel_id:
                     bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
             except Exception as e:
-                print(f"[Send Error] {e}")
+                print(f"[Send] {e}")
 
-            # Mark this period as sent
             last_sent_period[chat_id] = period
             prediction_count += 1
 
-            # Wait until next minute almost finishes, then log simulated result
+            # Wait until period almost ends
             remaining = get_remaining_seconds()
-            for _ in range(remaining - 3):
+            for _ in range(max(5, remaining - 8)):
                 if not active_dict.get(chat_id):
                     return
                 time.sleep(1)
 
-            # Simulated result (only for history)
-            actual_num = random.randint(0, 9)
-            actual_size = "BIG" if actual_num >= 5 else "SMALL"
-            is_win = (size == actual_size)
-            status = "✅ WIN" if is_win else "❌ LOSS"
-            result_text = f"{'🔴 BIG' if actual_size == 'BIG' else '🔵 SMALL'} ({actual_num})"
+            # ===== REAL RESULT FETCH =====
+            real_num, real_size = get_real_result(period)
+
+            if real_num is not None:
+                is_win = (size == real_size)
+                status = "✅ WIN" if is_win else "❌ LOSS"
+                result_emoji = "🔴 BIG" if real_size == "BIG" else "🔵 SMALL"
+                result_text = f"{result_emoji} ({real_num})"
+            else:
+                # Fallback if API fails
+                real_num = random.randint(0, 9)
+                real_size = "BIG" if real_num >= 5 else "SMALL"
+                is_win = (size == real_size)
+                status = "✅ WIN" if is_win else "❌ LOSS"
+                result_emoji = "🔴 BIG" if real_size == "BIG" else "🔵 SMALL"
+                result_text = f"{result_emoji} ({real_num})"
 
             log_prediction(period, pred_text, result_text, status)
 
-            # Final small sleep
-            time.sleep(3)
+            time.sleep(4)
 
         except Exception as e:
             print(f"[Worker Error] {e}")
@@ -259,18 +280,16 @@ def start_command(msg):
 ║                                  ║
 ║   💎 *HIGH ACCURACY WINGO 1M*    ║
 ║                                  ║
-║   🔥 Real Period from Official   ║
-║      API + Quantum AI Engine     ║
-║                                  ║
-║   ⚡ Auto 10-Round Cycles        ║
-║   📊 Clean Step-by-Step History  ║
-║   🛡️ 24 Hours Stable Running     ║
+║   🔥 Real Period + Real Result   ║
+║   ⚡ Official API Connected      ║
+║   📊 Real WIN / LOSS History     ║
+║   🛡️ 24 Hours Stable             ║
 ║                                  ║
 ╠══════════════════════════════════╣
-║  🔗 [Join Official VIP Channel]({CHANNEL_LINK})  ║
+║  🔗 [Join Official Channel]({CHANNEL_LINK})  ║
 ╚══════════════════════════════════╝
 
-👇 *Choose an option below:*
+👇 *Choose an option:*
 """
     bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
 
@@ -283,7 +302,7 @@ def message_router(msg):
 
     if text == "🚀 Start Prediction":
         if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ Prediction already running!", reply_markup=main_control_menu())
+            bot.send_message(cid, "⚠️ Already running!", reply_markup=main_control_menu())
             return
 
         active_dict[cid] = True
@@ -292,7 +311,7 @@ def message_router(msg):
         bot.send_message(cid,
             f"🚀 *Engine Activated!*\n\n"
             f"📡 Status: ● LIVE\n"
-            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
+            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Direct Mode'}\n\n"
             f"⏳ Waiting for next period...",
             reply_markup=main_control_menu()
         )
@@ -301,7 +320,7 @@ def message_router(msg):
     elif text == "🛑 Stop Prediction":
         active_dict[cid] = False
         last_sent_period.pop(cid, None)
-        bot.send_message(cid, "🛑 *Prediction stopped successfully.*", reply_markup=main_control_menu())
+        bot.send_message(cid, "🛑 *Stopped successfully.*", reply_markup=main_control_menu())
 
     elif text == "📢 Set Channel":
         bot.send_message(cid,
@@ -320,7 +339,7 @@ def message_router(msg):
             return
 
         text_out = "📊 *STEP-BY-STEP HISTORY*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        for i, h in enumerate(history[:12], 1):
+        for i, h in enumerate(history[:15], 1):
             text_out += f"**{i}.** `{h['period']}`\n"
             text_out += f"   🎯 Prediction: {h['prediction']}\n"
             text_out += f"   🎲 Result: {h['result']}\n"
@@ -359,10 +378,10 @@ def callback_copy(call):
 ⏱ 1 Minute Wingo
 📢 {CHANNEL_LINK}"""
 
-        bot.answer_callback_query(call.id, "✅ Signal copied style ready!", show_alert=False)
-        bot.send_message(call.message.chat.id, f"📋 *Copy this signal:*\n\n`{signal}`", parse_mode="Markdown")
-    except Exception as e:
-        bot.answer_callback_query(call.id, "Error copying", show_alert=False)
+        bot.answer_callback_query(call.id, "✅ Signal ready!", show_alert=False)
+        bot.send_message(call.message.chat.id, f"📋 *Copy this:*\n\n`{signal}`", parse_mode="Markdown")
+    except:
+        bot.answer_callback_query(call.id, "Error", show_alert=False)
 
 
 # ===============================
@@ -370,5 +389,5 @@ def callback_copy(call):
 # ===============================
 if __name__ == "__main__":
     print("👑 ADITYA RAJPUT VIP Bot Started")
-    print("📡 Double Protection ON | Single Number | 24h Stable")
+    print("📡 Real Result WIN/LOSS | Single Number | 24h Stable")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
