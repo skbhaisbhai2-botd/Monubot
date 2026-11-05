@@ -27,7 +27,7 @@ DATA_FILE = "prediction_history.json"
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 # ===============================
-# 🔮 API + PERIOD
+# 🔮 API FUNCTIONS
 # ===============================
 def get_api_list():
     headers = {
@@ -63,7 +63,7 @@ def get_next_period():
 
 
 def get_real_result(period):
-    for _ in range(12):
+    for _ in range(10):
         lst = get_api_list()
         if lst:
             for item in lst:
@@ -89,7 +89,6 @@ def generate_prediction(period: str):
     except:
         idx = random.randint(1, 1440)
 
-    # Same logic as your HTML web
     if idx % 3 == 0:
         size = "SMALL"
         num = 2
@@ -100,7 +99,6 @@ def generate_prediction(period: str):
         size = "BIG"
         num = 7
 
-    # Keep single number
     if size == "SMALL":
         num = random.choice([1, 2, 3, 4])
     else:
@@ -111,7 +109,7 @@ def generate_prediction(period: str):
 
 
 # ===============================
-# 📊 HISTORY (Permanent)
+# 📊 HISTORY (Immediate Save)
 # ===============================
 def load_json_data():
     if not os.path.exists(DATA_FILE):
@@ -128,22 +126,38 @@ def save_json_data(data):
         json.dump(data, f, indent=2)
 
 
-def add_to_history(period, pred_text, result_text, status):
+def add_pending_history(period, pred_text):
+    """Prediction bhejte hi turant history me daal do"""
     data = load_json_data()
     history = data.get("history", [])
 
-    # Prevent double of same period
+    # Already exists? skip
     if history and history[0].get("period") == str(period):
         return
 
     record = {
         "period": str(period),
         "prediction": pred_text,
-        "result": result_text,
-        "status": status
+        "result": "⏳ Waiting...",
+        "status": "⏳ PENDING"
     }
     history.insert(0, record)
     data["history"] = history[:80]
+    save_json_data(data)
+
+
+def update_history_result(period, result_text, status):
+    """Real result aane ke baad update karo"""
+    data = load_json_data()
+    history = data.get("history", [])
+
+    for item in history:
+        if item.get("period") == str(period):
+            item["result"] = result_text
+            item["status"] = status
+            break
+
+    data["history"] = history
     save_json_data(data)
 
 
@@ -224,12 +238,16 @@ def prediction_worker(chat_id, channel_id=None):
             except Exception as e:
                 print(f"[Send] {e}")
 
+            # ========== IMMEDIATE HISTORY SAVE ==========
+            add_pending_history(period, pred_text)
+            # ============================================
+
             last_sent_period[chat_id] = period
             prediction_count += 1
 
             # Wait for result
             remaining = get_remaining_seconds()
-            for _ in range(max(10, remaining - 8)):
+            for _ in range(max(8, remaining - 10)):
                 if not active_dict.get(chat_id):
                     return
                 time.sleep(1)
@@ -250,8 +268,8 @@ def prediction_worker(chat_id, channel_id=None):
                 result_emoji = "🔴 BIG" if real_size == "BIG" else "🔵 SMALL"
                 result_text = f"{result_emoji} ({real_num})"
 
-            # Save history immediately
-            add_to_history(period, pred_text, result_text, status)
+            # Update history with real result
+            update_history_result(period, result_text, status)
 
             time.sleep(4)
 
@@ -287,7 +305,7 @@ def start_command(msg):
 ║                                  ║
 ║   🔥 Same Prediction as Website  ║
 ║   ⚡ Real Period + Real Result   ║
-║   📊 Permanent History           ║
+║   📊 Instant History             ║
 ║   🛡️ 24 Hours Stable             ║
 ║                                  ║
 ╠══════════════════════════════════╣
@@ -340,20 +358,17 @@ def message_router(msg):
         history = data.get("history", [])
 
         if not history:
-            bot.send_message(cid, "📊 *No history yet.*\nStart prediction and wait for first result.", reply_markup=main_control_menu())
+            bot.send_message(cid, "📊 *No history yet.*\nStart prediction first.", reply_markup=main_control_menu())
             return
 
-        # Clean table style like your photo
         text_out = "📊 *STEP-BY-STEP HISTORY*\n"
-        text_out += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        text_out += "`Period` | `Pred` | `Result` | `Status`\n"
         text_out += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        for i, h in enumerate(history[:15], 1):
-            short_period = h['period'][-6:] if len(h['period']) > 6 else h['period']
-            text_out += f"**{i}.** `{short_period}`\n"
-            text_out += f"   🎯 {h['prediction']}\n"
-            text_out += f"   🎲 {h['result']}\n"
+        for i, h in enumerate(history[:20], 1):
+            short_p = h['period'][-6:] if len(h['period']) > 6 else h['period']
+            text_out += f"**{i}.** `{short_p}`\n"
+            text_out += f"   🎯 Prediction: {h['prediction']}\n"
+            text_out += f"   🎲 Result: {h['result']}\n"
             text_out += f"   {h['status']}\n\n"
 
         bot.send_message(cid, text_out, reply_markup=main_control_menu())
@@ -400,5 +415,5 @@ def callback_copy(call):
 # ===============================
 if __name__ == "__main__":
     print("👑 ADITYA RAJPUT VIP Bot Started")
-    print("📡 Same as Web | Real History | 24h Stable")
+    print("📡 Instant History | Same as Web | 24h Stable")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
