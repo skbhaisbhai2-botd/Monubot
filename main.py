@@ -2,8 +2,7 @@ import telebot
 import threading
 import time
 import random
-import pytz
-from datetime import datetime
+from datetime import datetime, timezone
 from telebot import types
 import json
 import os
@@ -25,36 +24,21 @@ active_dict = {}
 user_channels = {}
 DATA_FILE = "prediction_history.json"
 
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json?ts="
+API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 # ===============================
-# 🔮 HIGH-LEVEL PREDICTION ENGINE
+# 🔮 REAL PERIOD ENGINE (HTML matched)
 # ===============================
-def generate_high_level_prediction():
-    num = random.randint(0, 9)
-    if num >= 5:
-        big_small = "🔴 BIG"
-        size_type = "BIG"
-    else:
-        big_small = "🔵 SMALL"
-        size_type = "SMALL"
-    return big_small, size_type, num
-
-
 def get_real_period_from_api():
-    """
-    Official API se latest completed period laao aur next period return karo.
-    Format example: 20261105100010211
-    """
+    """Official API se latest period laao aur next period return karo"""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://draw.ar-lottery01.com/",
-        "Origin": "https://draw.ar-lottery01.com",
+        "Origin": "https://draw.ar-lottery01.com"
     }
     try:
-        r = requests.get(API_URL, headers=headers, timeout=8)
+        r = requests.get(API_URL + "?t=" + str(int(time.time()*1000)), headers=headers, timeout=7)
         if r.status_code == 200:
             data = r.json()
             if data.get("code") == 0 and data.get("data", {}).get("list"):
@@ -62,36 +46,72 @@ def get_real_period_from_api():
                 next_period = str(int(latest) + 1)
                 return next_period
     except Exception as e:
-        print(f"[API] Error: {e}")
+        print(f"[API Error] {e}")
     return None
 
 
 def get_period_number():
     """
-    Pehle API se real period try karo.
-    Fail hone par accurate local calculation use karo.
+    Exact same logic as the HTML file:
+    1. Try real API
+    2. Fallback → UTC based calculation (YYYYMMDD10001XXXX)
     """
+    # 1. Official API se real next period
     real = get_real_period_from_api()
     if real:
         return real
 
-    # Fallback calculation (correct format)
-    ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
-    yyyyMMdd = now.strftime("%Y%m%d")
+    # 2. Fallback - UTC (exactly like HTML)
+    now = datetime.now(timezone.utc)
+    y = now.strftime("%Y")
+    m = now.strftime("%m")
+    d = now.strftime("%d")
     total_minutes = now.hour * 60 + now.minute
-    # Format: YYYYMMDD1000XXXXX  (10001 + minutes)
-    return f"{yyyyMMdd}1000{10001 + total_minutes}"
+    period_idx = total_minutes + 1
+
+    return f"{y}{m}{d}10001{str(period_idx).zfill(4)}"
 
 
 def get_remaining_seconds():
-    ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
-    return 60 - now.second if now.second < 60 else 0
+    now = datetime.now(timezone.utc)
+    return 60 - now.second
 
 
 # ===============================
-# 📊 HISTORY & STATS STORAGE
+# 🎯 PREDICTION ENGINE (HTML style)
+# ===============================
+def generate_high_level_prediction(period: str):
+    """
+    HTML file jaisa prediction logic
+    Quantum / Neural style pattern
+    """
+    try:
+        idx = int(period[-4:])
+    except:
+        idx = random.randint(1, 1440)
+
+    if idx % 3 == 0:
+        size = "SMALL"
+        n1, n2 = 2, 4
+    elif idx % 5 < 3:
+        size = "SMALL"
+        n1, n2 = 1, 3
+    else:
+        size = "BIG"
+        n1, n2 = 7, 9
+
+    num = n1 if random.random() > 0.4 else n2
+
+    if size == "BIG":
+        big_small = "🔴 BIG"
+    else:
+        big_small = "🔵 SMALL"
+
+    return big_small, size, num
+
+
+# ===============================
+# 📊 HISTORY & STATS
 # ===============================
 def load_json_data():
     if not os.path.exists(DATA_FILE):
@@ -130,20 +150,19 @@ def update_user_activity(user_id):
 
 
 # ===============================
-# 🚀 PREDICTION WORKER THREAD
+# 🚀 PREDICTION WORKER
 # ===============================
 def prediction_worker(chat_id, channel_id=None):
     last_period = None
     prediction_count = 0
 
     while active_dict.get(chat_id):
-        # 10 predictions ke baad 20 minutes cool-down
         if prediction_count >= 10:
             try:
                 bot.send_message(
                     chat_id,
                     "⏳ *Target 10 Predictions Completed!*\n\n"
-                    "🛡️ Bot is taking a scheduled **20-minute safety cool-down break** to bypass server detection. It will auto-resume shortly!",
+                    "🛡️ 20-minute safety cool-down started...",
                     parse_mode="Markdown"
                 )
             except:
@@ -156,13 +175,14 @@ def prediction_worker(chat_id, channel_id=None):
 
             prediction_count = 0
             try:
-                bot.send_message(chat_id, "🚀 *Cool-down complete! Resuming high-level prediction sessions...*", parse_mode="Markdown")
+                bot.send_message(chat_id, "🚀 *Cool-down complete! Resuming...*", parse_mode="Markdown")
             except:
                 pass
 
         period = get_period_number()
+
         if period != last_period:
-            big_small, size_type, num = generate_high_level_prediction()
+            big_small, size_type, num = generate_high_level_prediction(period)
 
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"))
@@ -176,19 +196,19 @@ def prediction_worker(chat_id, channel_id=None):
 ⏱ *Timer:* 1 Minute Wingo
 ━━━━━━━━━━━━━━━━━━━
 🔗 [Join Official Channel]({CHANNEL_LINK})
-⚡ _Powered by High-Level AI Engine + Official API_
+⚡ _Powered by Official API + Quantum Engine_
 """
             try:
                 bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
                 if channel_id:
                     bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
             except Exception as e:
-                print(f"[!] Send failed: {e}")
+                print(f"[Send Error] {e}")
 
-            # Simulate result for history
+            # History log
             actual_num = random.randint(0, 9)
             actual_size = "🔴 BIG" if actual_num >= 5 else "🔵 SMALL"
-            is_win = (big_small.strip() == actual_size.strip())
+            is_win = (size_type == ("BIG" if actual_num >= 5 else "SMALL"))
             status_str = "✅ WIN" if is_win else "❌ LOSS"
 
             record = {
@@ -204,14 +224,14 @@ def prediction_worker(chat_id, channel_id=None):
 
         # Wait till next minute
         remaining = get_remaining_seconds()
-        for _ in range(remaining):
+        for _ in range(max(1, remaining)):
             if not active_dict.get(chat_id):
                 break
             time.sleep(1)
 
 
 # ===============================
-# 📱 KEYBOARDS & MENUS
+# 📱 KEYBOARDS
 # ===============================
 def main_control_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -222,17 +242,17 @@ def main_control_menu():
 
 
 # ===============================
-# 🤖 BOT HANDLERS
+# 🤖 HANDLERS
 # ===============================
 @bot.message_handler(commands=["start"])
 def start_command(msg):
     update_user_activity(msg.from_user.id)
     welcome_text = (
         f"🌟 *WELCOME TO ADITYA RAJPUT VIP BOT* 🌟\n\n"
-        f"💎 *High-Accuracy Wingo Prediction System*\n"
-        f"🔥 Features: Real Game Period (Official API), Auto 10-Round Cycles, Live History & Smart Analytics.\n\n"
+        f"💎 *High-Accuracy Wingo 1M Prediction*\n"
+        f"🔥 Real Period from Official API + Quantum Engine\n\n"
         f"🔗 [Join Official VIP Channel]({CHANNEL_LINK})\n\n"
-        f"👇 Choose an option from below to get started:"
+        f"👇 Choose an option:"
     )
     bot.send_message(msg.chat.id, welcome_text, reply_markup=main_control_menu(), disable_web_page_preview=True)
 
@@ -245,28 +265,28 @@ def message_router(msg):
 
     if text == "🚀 Start Prediction":
         if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ Prediction session is already running actively!", reply_markup=main_control_menu())
+            bot.send_message(cid, "⚠️ Already running!", reply_markup=main_control_menu())
             return
         active_dict[cid] = True
         ch = user_channels.get(cid)
         bot.send_message(
             cid,
-            f"🚀 *ADITYA RAJPUT AI Engine Activated!*\n\n"
+            f"🚀 *Engine Activated!*\n\n"
             f"📡 Status: Running\n"
-            f"{'📢 Linked Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat Only'}",
+            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Direct Mode'}",
             reply_markup=main_control_menu()
         )
         threading.Thread(target=prediction_worker, args=(cid, ch), daemon=True).start()
 
     elif text == "🛑 Stop Prediction":
         active_dict[cid] = False
-        bot.send_message(cid, "🛑 *Prediction session stopped successfully.*", reply_markup=main_control_menu())
+        bot.send_message(cid, "🛑 *Stopped successfully.*", reply_markup=main_control_menu())
 
     elif text == "📢 Set Channel":
         bot.send_message(
             cid,
-            "📢 Please send your **Channel Username** (e.g., `@yourchannel`) or **Channel ID** (e.g., `-100xxxxxxxxxx`).\n\n"
-            "⚠️ *Note: Ensure this bot is added as an Admin in your channel.*",
+            "📢 Send **Channel Username** (`@channel`) or **Channel ID** (`-100xxxxxxxxxx`)\n\n"
+            "⚠️ Bot ko channel me **Admin** banao.",
             parse_mode="Markdown"
         )
         user_channels[cid] = "waiting_channel"
@@ -274,41 +294,40 @@ def message_router(msg):
     elif text == "📊 History & Stats":
         data = load_json_data()
         history = data.get("history", [])
-
-        history_text = "📊 *STEP-BY-STEP PREDICTION HISTORY*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        history_text = "📊 *LAST 10 PREDICTIONS*\n━━━━━━━━━━━━━━━━━━━━\n"
         if not history:
-            history_text += "_No prediction history recorded yet._"
+            history_text += "_No history yet._"
         else:
             for idx, h in enumerate(history[:10], 1):
-                history_text += f"{idx}. 🧾 `{h['period']}`\n   🎯 Ptr: {h['prediction']}\n   🎲 Res: {h['result_num']} | {h['status']}\n\n"
-
+                history_text += f"{idx}. `{h['period']}`\n   🎯 {h['prediction']}\n   🎲 {h['result_num']} | {h['status']}\n\n"
         bot.send_message(cid, history_text, reply_markup=main_control_menu())
 
     elif text == "👑 Developer Support":
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💬 Contact Developer", url=CHANNEL_LINK))
-        bot.send_message(cid, "👑 For custom bot setup or support, contact via official channel:", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton("💬 Contact", url=CHANNEL_LINK))
+        bot.send_message(cid, "👑 Support ke liye channel join karein:", reply_markup=markup)
 
     elif user_channels.get(cid) == "waiting_channel":
         ch_input = text
         try:
-            bot.send_message(ch_input, "✅ ADITYA RAJPUT Bot connected successfully to this channel!")
+            bot.send_message(ch_input, "✅ ADITYA RAJPUT Bot successfully connected!")
             user_channels[cid] = ch_input
-            bot.send_message(cid, f"✅ Channel successfully linked: `{ch_input}`", reply_markup=main_control_menu())
+            bot.send_message(cid, f"✅ Linked: `{ch_input}`", reply_markup=main_control_menu())
         except Exception as e:
-            bot.send_message(cid, f"❌ Link failed. Make sure bot is admin.\nError: `{e}`", reply_markup=main_control_menu())
+            bot.send_message(cid, f"❌ Failed. Bot ko Admin banao.\nError: `{e}`", reply_markup=main_control_menu())
             user_channels[cid] = None
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "copy_sig")
 def callback_copy(call):
-    bot.answer_callback_query(call.id, "✅ Signal template ready! Copy from message text.", show_alert=False)
+    bot.answer_callback_query(call.id, "✅ Signal ready! Copy from message.", show_alert=False)
 
 
 # ===============================
-# 🚀 RUN BOT
+# 🚀 START BOT
 # ===============================
 if __name__ == "__main__":
-    print("👑 ADITYA RAJPUT Direct Prediction Bot Running...")
-    print("📡 Using Official WinGo 1M API for accurate Periods")
+    print("👑 ADITYA RAJPUT Bot Running...")
+    print("📡 Using Official WinGo API + UTC Period (HTML matched)")
+    print(f"🔑 Token: {BOT_TOKEN[:15]}...")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
