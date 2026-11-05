@@ -18,17 +18,16 @@ CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
 # ===============================
-# 🌐 GLOBAL STATES & STORAGE
+# 🌐 GLOBAL STATES
 # ===============================
 active_dict = {}
 user_channels = {}
-last_sent_period = {}          # chat_id -> last period (double prevention)
+last_sent_period = {}          # Strong double prevention
 DATA_FILE = "prediction_history.json"
-
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 # ===============================
-# 🔮 REAL PERIOD ENGINE
+# 🔮 PERIOD ENGINE
 # ===============================
 def get_real_period_from_api():
     headers = {
@@ -38,7 +37,7 @@ def get_real_period_from_api():
         "Origin": "https://draw.ar-lottery01.com"
     }
     try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time() * 1000)), headers=headers, timeout=6)
+        r = requests.get(API_URL + "?t=" + str(int(time.time()*1000)), headers=headers, timeout=6)
         if r.status_code == 200:
             data = r.json()
             if data.get("code") == 0 and data.get("data", {}).get("list"):
@@ -65,13 +64,13 @@ def get_period_number():
 
 def get_remaining_seconds():
     now = datetime.now(timezone.utc)
-    return max(1, 60 - now.second)
+    return max(2, 60 - now.second)
 
 
 # ===============================
-# 🎯 PREDICTION ENGINE
+# 🎯 PREDICTION (Only 1 Number)
 # ===============================
-def generate_high_level_prediction(period: str):
+def generate_prediction(period: str):
     try:
         idx = int(period[-4:])
     except:
@@ -87,21 +86,21 @@ def generate_high_level_prediction(period: str):
         size = "BIG"
         num = random.choice([5, 6, 7, 8, 9])
 
-    big_small = "🔴 BIG" if size == "BIG" else "🔵 SMALL"
-    return big_small, size, num
+    emoji = "🔴 BIG" if size == "BIG" else "🔵 SMALL"
+    return emoji, size, num
 
 
 # ===============================
-# 📊 HISTORY
+# 📊 HISTORY (Clean + No Double)
 # ===============================
 def load_json_data():
     if not os.path.exists(DATA_FILE):
         return {"history": [], "users": {}}
-    with open(DATA_FILE, "r") as f:
-        try:
+    try:
+        with open(DATA_FILE, "r") as f:
             return json.load(f)
-        except:
-            return {"history": [], "users": {}}
+    except:
+        return {"history": [], "users": {}}
 
 
 def save_json_data(data):
@@ -109,16 +108,22 @@ def save_json_data(data):
         json.dump(data, f, indent=2)
 
 
-def log_prediction_history(record):
+def log_prediction(period, pred_text, result_text, status):
     data = load_json_data()
     history = data.get("history", [])
 
-    # Double history prevention
-    if history and history[0].get("period") == record["period"]:
+    # Prevent double entry of same period
+    if history and history[0].get("period") == period:
         return
 
+    record = {
+        "period": period,
+        "prediction": pred_text,
+        "result": result_text,
+        "status": status
+    }
     history.insert(0, record)
-    data["history"] = history[:40]
+    data["history"] = history[:50]
     save_json_data(data)
 
 
@@ -131,104 +136,106 @@ def update_user_activity(user_id):
         users[uid] = {"first_seen": now, "last_seen": now, "usage_count": 1}
     else:
         users[uid]["last_seen"] = now
-        users[uid]["usage_count"] += 1
+        users[uid]["usage_count"] = users[uid].get("usage_count", 0) + 1
     data["users"] = users
     save_json_data(data)
 
 
 # ===============================
-# 🚀 PREDICTION WORKER (No Double)
+# 🚀 WORKER (No Double + 24h Stable)
 # ===============================
 def prediction_worker(chat_id, channel_id=None):
     prediction_count = 0
 
     while active_dict.get(chat_id):
-        # Cool-down after 10 predictions
-        if prediction_count >= 10:
-            try:
-                bot.send_message(chat_id,
-                    "⏳ *10 Predictions Completed*\n\n"
-                    "🛡️ 20-minute safety cool-down started...",
-                    parse_mode="Markdown")
-            except:
-                pass
+        try:
+            # Cool-down after 10 predictions
+            if prediction_count >= 10:
+                try:
+                    bot.send_message(chat_id,
+                        "⏳ *10 Predictions Completed*\n\n"
+                        "🛡️ Taking 20-minute safety cool-down...",
+                        parse_mode="Markdown")
+                except:
+                    pass
 
-            for _ in range(1200):
-                if not active_dict.get(chat_id):
-                    return
-                time.sleep(1)
+                for _ in range(1200):
+                    if not active_dict.get(chat_id):
+                        return
+                    time.sleep(1)
 
-            prediction_count = 0
-            try:
-                bot.send_message(chat_id, "🚀 *Cool-down complete! Resuming...*", parse_mode="Markdown")
-            except:
-                pass
+                prediction_count = 0
+                try:
+                    bot.send_message(chat_id, "🚀 *Cool-down finished. Resuming...*", parse_mode="Markdown")
+                except:
+                    pass
 
-        period = get_period_number()
+            period = get_period_number()
 
-        # ====== DOUBLE PREDICTION PREVENTION ======
-        if last_sent_period.get(chat_id) == period:
-            # Already sent this period → just wait
-            remaining = get_remaining_seconds()
-            for _ in range(remaining):
-                if not active_dict.get(chat_id):
-                    return
-                time.sleep(1)
-            continue
-        # ==========================================
+            # ========== STRONG DOUBLE PREVENTION ==========
+            if last_sent_period.get(chat_id) == period:
+                remaining = get_remaining_seconds()
+                for _ in range(remaining):
+                    if not active_dict.get(chat_id):
+                        return
+                    time.sleep(1)
+                continue
+            # ==============================================
 
-        big_small, size_type, num = generate_high_level_prediction(period)
+            emoji, size, num = generate_prediction(period)
+            pred_text = f"{emoji} – {num}"
 
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"))
-        markup.add(types.InlineKeyboardButton("📢 Official Channel", url=CHANNEL_LINK))
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("📋 Copy Signal", callback_data=f"copy_{period}_{num}_{size}"))
+            markup.add(types.InlineKeyboardButton("📢 Official Channel", url=CHANNEL_LINK))
 
-        caption = f"""
+            caption = f"""
 👑 *ADITYA RAJPUT VIP PREDICTOR* 👑
 ━━━━━━━━━━━━━━━━━━━
 🧾 *Game Period:* `{period}`
-🎯 *Prediction:* {big_small} – *{num}*
+🎯 *Prediction:* {pred_text}
 ⏱ *Timer:* 1 Minute Wingo
 ━━━━━━━━━━━━━━━━━━━
 🔗 [Join Official Channel]({CHANNEL_LINK})
-⚡ _Powered by Official API + Quantum Engine_
+⚡ _Official API + Quantum Engine_
 """
-        try:
-            bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-            if channel_id:
-                bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
+            try:
+                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
+                if channel_id:
+                    bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
+            except Exception as e:
+                print(f"[Send Error] {e}")
+
+            # Mark this period as sent
+            last_sent_period[chat_id] = period
+            prediction_count += 1
+
+            # Wait until next minute almost finishes, then log simulated result
+            remaining = get_remaining_seconds()
+            for _ in range(remaining - 3):
+                if not active_dict.get(chat_id):
+                    return
+                time.sleep(1)
+
+            # Simulated result (only for history)
+            actual_num = random.randint(0, 9)
+            actual_size = "BIG" if actual_num >= 5 else "SMALL"
+            is_win = (size == actual_size)
+            status = "✅ WIN" if is_win else "❌ LOSS"
+            result_text = f"{'🔴 BIG' if actual_size == 'BIG' else '🔵 SMALL'} ({actual_num})"
+
+            log_prediction(period, pred_text, result_text, status)
+
+            # Final small sleep
+            time.sleep(3)
+
         except Exception as e:
-            print(f"[Send] {e}")
-
-        # Mark as sent
-        last_sent_period[chat_id] = period
-
-        # History (with double check)
-        actual_num = random.randint(0, 9)
-        actual_size = "🔴 BIG" if actual_num >= 5 else "🔵 SMALL"
-        is_win = (size_type == ("BIG" if actual_num >= 5 else "SMALL"))
-        status = "✅ WIN" if is_win else "❌ LOSS"
-
-        record = {
-            "period": period,
-            "prediction": f"{big_small} ({num})",
-            "result_num": f"{actual_size} ({actual_num})",
-            "status": status
-        }
-        log_prediction_history(record)
-
-        prediction_count += 1
-
-        # Wait for next minute
-        remaining = get_remaining_seconds()
-        for _ in range(remaining):
-            if not active_dict.get(chat_id):
-                return
-            time.sleep(1)
+            print(f"[Worker Error] {e}")
+            time.sleep(5)
 
 
 # ===============================
-# 📱 KEYBOARD
+# 📱 MENU
 # ===============================
 def main_control_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -256,14 +263,14 @@ def start_command(msg):
 ║      API + Quantum AI Engine     ║
 ║                                  ║
 ║   ⚡ Auto 10-Round Cycles        ║
-║   📊 Live History & Stats        ║
-║   🛡️ Smart Cool-down System      ║
+║   📊 Clean Step-by-Step History  ║
+║   🛡️ 24 Hours Stable Running     ║
 ║                                  ║
 ╠══════════════════════════════════╣
 ║  🔗 [Join Official VIP Channel]({CHANNEL_LINK})  ║
 ╚══════════════════════════════════╝
 
-👇 *Choose an option below to begin:*
+👇 *Choose an option below:*
 """
     bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
 
@@ -283,9 +290,9 @@ def message_router(msg):
         ch = user_channels.get(cid)
 
         bot.send_message(cid,
-            f"🚀 *Engine Activated Successfully!*\n\n"
+            f"🚀 *Engine Activated!*\n\n"
             f"📡 Status: ● LIVE\n"
-            f"{'📢 Linked Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
+            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
             f"⏳ Waiting for next period...",
             reply_markup=main_control_menu()
         )
@@ -298,8 +305,8 @@ def message_router(msg):
 
     elif text == "📢 Set Channel":
         bot.send_message(cid,
-            "📢 Send your **Channel Username** (`@channel`) or **Channel ID** (`-100xxxxxxxxxx`)\n\n"
-            "⚠️ Make sure this bot is **Admin** in the channel.",
+            "📢 Send **Channel Username** (`@channel`) or **Channel ID** (`-100xxxxxxxxxx`)\n\n"
+            "⚠️ Bot ko channel me **Admin** banao.",
             parse_mode="Markdown"
         )
         user_channels[cid] = "waiting_channel"
@@ -308,42 +315,60 @@ def message_router(msg):
         data = load_json_data()
         history = data.get("history", [])
 
-        text_out = "📊 *LAST 10 PREDICTIONS*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
         if not history:
-            text_out += "_No prediction history yet._"
-        else:
-            for i, h in enumerate(history[:10], 1):
-                text_out += f"**{i}.** `{h['period']}`\n"
-                text_out += f"   🎯 {h['prediction']}\n"
-                text_out += f"   🎲 {h['result_num']} | {h['status']}\n\n"
+            bot.send_message(cid, "📊 *No history yet.*\nStart prediction first.", reply_markup=main_control_menu())
+            return
+
+        text_out = "📊 *STEP-BY-STEP HISTORY*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        for i, h in enumerate(history[:12], 1):
+            text_out += f"**{i}.** `{h['period']}`\n"
+            text_out += f"   🎯 Prediction: {h['prediction']}\n"
+            text_out += f"   🎲 Result: {h['result']}\n"
+            text_out += f"   {h['status']}\n\n"
 
         bot.send_message(cid, text_out, reply_markup=main_control_menu())
 
     elif text == "👑 Developer Support":
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💬 Contact Developer", url=CHANNEL_LINK))
-        bot.send_message(cid, "👑 For support / custom setup:", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton("💬 Contact", url=CHANNEL_LINK))
+        bot.send_message(cid, "👑 Support / Custom Bot:", reply_markup=markup)
 
     elif user_channels.get(cid) == "waiting_channel":
         ch_input = text
         try:
-            bot.send_message(ch_input, "✅ *ADITYA RAJPUT Bot* successfully connected to this channel!")
+            bot.send_message(ch_input, "✅ *ADITYA RAJPUT Bot* successfully connected!")
             user_channels[cid] = ch_input
-            bot.send_message(cid, f"✅ Channel linked: `{ch_input}`", reply_markup=main_control_menu())
+            bot.send_message(cid, f"✅ Linked: `{ch_input}`", reply_markup=main_control_menu())
         except Exception as e:
-            bot.send_message(cid, f"❌ Failed!\nMake bot Admin.\n\nError: `{e}`", reply_markup=main_control_menu())
+            bot.send_message(cid, f"❌ Failed! Bot ko Admin banao.\n\n`{e}`", reply_markup=main_control_menu())
             user_channels[cid] = None
 
 
-@bot.callback_query_handler(func=lambda call: call.data == "copy_sig")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("copy_"))
 def callback_copy(call):
-    bot.answer_callback_query(call.id, "✅ Signal ready! Copy from the message above.", show_alert=False)
+    try:
+        parts = call.data.split("_")
+        period = parts[1]
+        num = parts[2]
+        size = parts[3]
+        emoji = "🔴 BIG" if size == "BIG" else "🔵 SMALL"
+
+        signal = f"""🔥 ADITYA RAJPUT VIP SIGNAL 🔥
+🧾 Period: {period}
+🎯 Prediction: {emoji} – {num}
+⏱ 1 Minute Wingo
+📢 {CHANNEL_LINK}"""
+
+        bot.answer_callback_query(call.id, "✅ Signal copied style ready!", show_alert=False)
+        bot.send_message(call.message.chat.id, f"📋 *Copy this signal:*\n\n`{signal}`", parse_mode="Markdown")
+    except Exception as e:
+        bot.answer_callback_query(call.id, "Error copying", show_alert=False)
 
 
 # ===============================
-# 🚀 RUN
+# 🚀 START
 # ===============================
 if __name__ == "__main__":
     print("👑 ADITYA RAJPUT VIP Bot Started")
-    print("📡 Official API + UTC Period + Double Protection ON")
+    print("📡 Double Protection ON | Single Number | 24h Stable")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
