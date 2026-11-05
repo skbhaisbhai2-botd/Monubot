@@ -22,12 +22,12 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 # ===============================
 active_dict = {}
 user_channels = {}
-last_sent_period = {}               # Double prediction prevention
+last_sent_period = {}
 DATA_FILE = "prediction_history.json"
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
 # ===============================
-# 🔮 PERIOD + REAL RESULT ENGINE
+# 🔮 API + PERIOD
 # ===============================
 def get_api_list():
     headers = {
@@ -37,13 +37,13 @@ def get_api_list():
         "Origin": "https://draw.ar-lottery01.com"
     }
     try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time() * 1000)), headers=headers, timeout=8)
+        r = requests.get(API_URL + "?t=" + str(int(time.time()*1000)), headers=headers, timeout=8)
         if r.status_code == 200:
             data = r.json()
             if data.get("code") == 0 and data.get("data", {}).get("list"):
                 return data["data"]["list"]
     except Exception as e:
-        print(f"[API Error] {e}")
+        print(f"[API] {e}")
     return None
 
 
@@ -53,7 +53,6 @@ def get_next_period():
         latest = lst[0]["issueNumber"]
         return str(int(latest) + 1)
 
-    # Fallback (UTC) – same as HTML
     now = datetime.now(timezone.utc)
     y = now.strftime("%Y")
     m = now.strftime("%m")
@@ -64,8 +63,7 @@ def get_next_period():
 
 
 def get_real_result(period):
-    """Real result of specific period from API"""
-    for attempt in range(15):
+    for _ in range(12):
         lst = get_api_list()
         if lst:
             for item in lst:
@@ -73,7 +71,7 @@ def get_real_result(period):
                     num = int(item["number"])
                     size = "BIG" if num >= 5 else "SMALL"
                     return num, size
-        time.sleep(4)
+        time.sleep(5)
     return None, None
 
 
@@ -83,19 +81,15 @@ def get_remaining_seconds():
 
 
 # ===============================
-# 🎯 PREDICTION (Same as HTML)
+# 🎯 PREDICTION (Same as Web)
 # ===============================
 def generate_prediction(period: str):
-    """
-    Exact same logic as your HTML web file
-    so both give identical prediction
-    """
     try:
         idx = int(period[-4:])
     except:
         idx = random.randint(1, 1440)
 
-    # Same as HTML Quantum style
+    # Same logic as your HTML web
     if idx % 3 == 0:
         size = "SMALL"
         num = 2
@@ -106,7 +100,7 @@ def generate_prediction(period: str):
         size = "BIG"
         num = 7
 
-    # Small random variation for natural feel (optional)
+    # Keep single number
     if size == "SMALL":
         num = random.choice([1, 2, 3, 4])
     else:
@@ -117,7 +111,7 @@ def generate_prediction(period: str):
 
 
 # ===============================
-# 📊 HISTORY (Never Delete)
+# 📊 HISTORY (Permanent)
 # ===============================
 def load_json_data():
     if not os.path.exists(DATA_FILE):
@@ -134,11 +128,11 @@ def save_json_data(data):
         json.dump(data, f, indent=2)
 
 
-def log_prediction(period, pred_text, result_text, status):
+def add_to_history(period, pred_text, result_text, status):
     data = load_json_data()
     history = data.get("history", [])
 
-    # Prevent same period double entry
+    # Prevent double of same period
     if history and history[0].get("period") == str(period):
         return
 
@@ -146,11 +140,10 @@ def log_prediction(period, pred_text, result_text, status):
         "period": str(period),
         "prediction": pred_text,
         "result": result_text,
-        "status": status,
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "status": status
     }
     history.insert(0, record)
-    data["history"] = history[:100]          # keep last 100
+    data["history"] = history[:80]
     save_json_data(data)
 
 
@@ -169,19 +162,18 @@ def update_user_activity(user_id):
 
 
 # ===============================
-# 🚀 WORKER (24h Stable + Real Result)
+# 🚀 WORKER
 # ===============================
 def prediction_worker(chat_id, channel_id=None):
     prediction_count = 0
 
     while active_dict.get(chat_id):
         try:
-            # Cool-down after 10 predictions
             if prediction_count >= 10:
                 try:
                     bot.send_message(chat_id,
                         "⏳ *10 Predictions Completed*\n\n"
-                        "🛡️ 20-minute safety cool-down started...",
+                        "🛡️ 20-minute safety cool-down...",
                         parse_mode="Markdown")
                 except:
                     pass
@@ -193,13 +185,13 @@ def prediction_worker(chat_id, channel_id=None):
 
                 prediction_count = 0
                 try:
-                    bot.send_message(chat_id, "🚀 *Cool-down finished. Resuming predictions...*", parse_mode="Markdown")
+                    bot.send_message(chat_id, "🚀 *Cool-down finished. Resuming...*", parse_mode="Markdown")
                 except:
                     pass
 
             period = get_next_period()
 
-            # ========== DOUBLE PREVENTION ==========
+            # Double prevention
             if last_sent_period.get(chat_id) == period:
                 remaining = get_remaining_seconds()
                 for _ in range(remaining):
@@ -207,7 +199,6 @@ def prediction_worker(chat_id, channel_id=None):
                         return
                     time.sleep(1)
                 continue
-            # =======================================
 
             emoji, size, num = generate_prediction(period)
             pred_text = f"{emoji} – {num}"
@@ -231,20 +222,19 @@ def prediction_worker(chat_id, channel_id=None):
                 if channel_id:
                     bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
             except Exception as e:
-                print(f"[Send Error] {e}")
+                print(f"[Send] {e}")
 
             last_sent_period[chat_id] = period
             prediction_count += 1
 
-            # Wait until period is about to finish
+            # Wait for result
             remaining = get_remaining_seconds()
-            wait_time = max(8, remaining - 10)
-            for _ in range(wait_time):
+            for _ in range(max(10, remaining - 8)):
                 if not active_dict.get(chat_id):
                     return
                 time.sleep(1)
 
-            # ===== REAL RESULT FROM SITE =====
+            # Real result
             real_num, real_size = get_real_result(period)
 
             if real_num is not None:
@@ -253,7 +243,6 @@ def prediction_worker(chat_id, channel_id=None):
                 result_emoji = "🔴 BIG" if real_size == "BIG" else "🔵 SMALL"
                 result_text = f"{result_emoji} ({real_num})"
             else:
-                # very rare fallback
                 real_num = random.randint(0, 9)
                 real_size = "BIG" if real_num >= 5 else "SMALL"
                 is_win = (size == real_size)
@@ -261,13 +250,14 @@ def prediction_worker(chat_id, channel_id=None):
                 result_emoji = "🔴 BIG" if real_size == "BIG" else "🔵 SMALL"
                 result_text = f"{result_emoji} ({real_num})"
 
-            log_prediction(period, pred_text, result_text, status)
+            # Save history immediately
+            add_to_history(period, pred_text, result_text, status)
 
-            time.sleep(5)
+            time.sleep(4)
 
         except Exception as e:
-            print(f"[Worker Error] {e}")
-            time.sleep(8)
+            print(f"[Worker] {e}")
+            time.sleep(6)
 
 
 # ===============================
@@ -298,13 +288,13 @@ def start_command(msg):
 ║   🔥 Same Prediction as Website  ║
 ║   ⚡ Real Period + Real Result   ║
 ║   📊 Permanent History           ║
-║   🛡️ 24 Hours Stable Running     ║
+║   🛡️ 24 Hours Stable             ║
 ║                                  ║
 ╠══════════════════════════════════╣
 ║  🔗 [Join Official Channel]({CHANNEL_LINK})  ║
 ╚══════════════════════════════════╝
 
-👇 *Choose an option below:*
+👇 *Choose an option:*
 """
     bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
 
@@ -317,7 +307,7 @@ def message_router(msg):
 
     if text == "🚀 Start Prediction":
         if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ Prediction already running!", reply_markup=main_control_menu())
+            bot.send_message(cid, "⚠️ Already running!", reply_markup=main_control_menu())
             return
 
         active_dict[cid] = True
@@ -326,7 +316,7 @@ def message_router(msg):
         bot.send_message(cid,
             f"🚀 *Engine Activated!*\n\n"
             f"📡 Status: ● LIVE\n"
-            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
+            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Direct Mode'}\n\n"
             f"⏳ Waiting for next period...",
             reply_markup=main_control_menu()
         )
@@ -335,7 +325,7 @@ def message_router(msg):
     elif text == "🛑 Stop Prediction":
         active_dict[cid] = False
         last_sent_period.pop(cid, None)
-        bot.send_message(cid, "🛑 *Prediction stopped successfully.*", reply_markup=main_control_menu())
+        bot.send_message(cid, "🛑 *Stopped successfully.*", reply_markup=main_control_menu())
 
     elif text == "📢 Set Channel":
         bot.send_message(cid,
@@ -350,14 +340,20 @@ def message_router(msg):
         history = data.get("history", [])
 
         if not history:
-            bot.send_message(cid, "📊 *No history yet.*\nStart prediction first.", reply_markup=main_control_menu())
+            bot.send_message(cid, "📊 *No history yet.*\nStart prediction and wait for first result.", reply_markup=main_control_menu())
             return
 
-        text_out = "📊 *STEP-BY-STEP HISTORY*\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        for i, h in enumerate(history[:20], 1):
-            text_out += f"**{i}.** `{h['period']}`\n"
-            text_out += f"   🎯 Prediction: {h['prediction']}\n"
-            text_out += f"   🎲 Result: {h['result']}\n"
+        # Clean table style like your photo
+        text_out = "📊 *STEP-BY-STEP HISTORY*\n"
+        text_out += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text_out += "`Period` | `Pred` | `Result` | `Status`\n"
+        text_out += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        for i, h in enumerate(history[:15], 1):
+            short_period = h['period'][-6:] if len(h['period']) > 6 else h['period']
+            text_out += f"**{i}.** `{short_period}`\n"
+            text_out += f"   🎯 {h['prediction']}\n"
+            text_out += f"   🎲 {h['result']}\n"
             text_out += f"   {h['status']}\n\n"
 
         bot.send_message(cid, text_out, reply_markup=main_control_menu())
@@ -394,15 +390,15 @@ def callback_copy(call):
 📢 {CHANNEL_LINK}"""
 
         bot.answer_callback_query(call.id, "✅ Signal ready!", show_alert=False)
-        bot.send_message(call.message.chat.id, f"📋 *Copy this signal:*\n\n`{signal}`", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, f"📋 *Copy this:*\n\n`{signal}`", parse_mode="Markdown")
     except:
         bot.answer_callback_query(call.id, "Error", show_alert=False)
 
 
 # ===============================
-# 🚀 START BOT
+# 🚀 START
 # ===============================
 if __name__ == "__main__":
     print("👑 ADITYA RAJPUT VIP Bot Started")
-    print("📡 Same Prediction as HTML | Real WIN/LOSS | 24h Stable")
+    print("📡 Same as Web | Real History | 24h Stable")
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
