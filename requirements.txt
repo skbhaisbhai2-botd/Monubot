@@ -1,15 +1,7 @@
-# ============================================
-# ADITYA RAJPUT VIP Wingo 1M Prediction Bot
-# Full Requirements - Production Ready
-# ============================================
-
 pyTelegramBotAPI==4.22.1
-pytz==2024.1
 requests==2.32.3
 urllib3==2.2.2
 certifi==2024.7.4
 charset-normalizer==3.3.2
 idna==3.7
-
-# Optional (recommended for stability)
 python-dotenv==1.0.1
