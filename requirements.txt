@@ -1,6 +1,4 @@
-pyTelegramBotAPI==4.22.1
-requests==2.32.3
-urllib3==2.2.2
-certifi==2024.7.4
-charset-normalizer==3.3.2
-idna==3.7
+npm install -g pm2
+pm2 start main.py --interpreter python3 --name "suraj-7000k-bot"
+pm2 save
+pm2 startup
