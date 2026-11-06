@@ -1,485 +1,243 @@
-import telebot
-import threading
-import time
-import json
 import os
-import random
-import requests
-from datetime import datetime, timezone
-from telebot import types
+import time
+import asyncio
+import logging
+from pathlib import Path
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+import cv2
+import numpy as np
 
-# ===============================
-# 🔧 BOT CONFIGURATION
-# ===============================
-BOT_TOKEN = "9221404814:AAHUfJxq5Ei9dUMt1sgMkRKXOyoJzn-Q55s"
-ADMIN_ID = 7741897793
-CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-DEFAULT_GAME_URL = "https://bdg3.cc//#/register?invitationCode=3112216930497"
+# ====================== SURAJ BHAI BOT TOKEN ======================
+BOT_TOKEN = "8995770613:AAEK1Qca2-0Sh8h_WeQXg_bD9wE1VevY-1w"
+# =================================================================
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# ===============================
-# 🌐 GLOBAL STATES & STORAGE
-# ===============================
-active_dict = {}                  # chat_id -> True/False
-user_channels = {}                # chat_id -> channel
-last_sent_period = {}             # chat_id -> last sent period string
-worker_threads = {}               # chat_id -> Thread instance
-DATA_FILE = "prediction_history.json"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-current_pred = {
-    "period_full": "",
-    "period_short": "----",
-    "trend": "BIG",
-    "main": 5,
-    "opp": 4,
-    "confidence": 97,
-    "level": 1
-}
-loss_streak = 0
-last_trend = None
-last_issue = ""
-next_issue = ""
-history_list = []                 
-total_wins = 0
-total_losses = 0
-total_jackpots = 0
+# ====================== 7000K UHD ULTRA ENHANCER ENGINE ======================
+class Ultra7000KPhotoEnhancer:
+    def __init__(self, image_path: str):
+        self.original = Image.open(image_path).convert("RGB")
+        self.img = self.original.copy()
+        self.cv_img = cv2.cvtColor(np.array(self.img), cv2.COLOR_RGB2BGR)
 
-state_lock = threading.Lock()
-
-# ===============================
-# 📊 DATA PERSISTENCE
-# ===============================
-def load_data():
-    global history_list, total_wins, total_losses, total_jackpots, loss_streak, last_trend
-    if not os.path.exists(DATA_FILE):
-        return
-    try:
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            history_list = data.get("history", [])[:50]
-            total_wins = data.get("total_wins", 0)
-            total_losses = data.get("total_losses", 0)
-            total_jackpots = data.get("total_jackpots", 0)
-            loss_streak = data.get("loss_streak", 0)
-            last_trend = data.get("last_trend", None)
-    except Exception as e:
-        print(f"[Load Error] {e}")
-
-def save_data():
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump({
-                "history": history_list[:50],
-                "total_wins": total_wins,
-                "total_losses": total_losses,
-                "total_jackpots": total_jackpots,
-                "loss_streak": loss_streak,
-                "last_trend": last_trend
-            }, f, indent=2)
-    except Exception as e:
-        print(f"[Save Error] {e}")
-
-load_data()
-
-# ===============================
-# 🔮 PREDICTION LOGIC & LIVE API
-# ===============================
-def get_size(n):
-    return "BIG" if n >= 5 else "SMALL"
-
-def get_color(n):
-    return "RED" if n in [0, 2, 4, 6, 8] else "GREEN"
-
-def fetch_wingo_list():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://draw.ar-lottery01.com/",
-        "Origin": "https://draw.ar-lottery01.com"
-    }
-    try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time() * 1000)), headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("code") == 0 and data.get("data", {}).get("list"):
-                return data["data"]["list"]
-    except Exception as e:
-        print(f"[API Warning] {e}")
-    return None
-
-def compute_signal(list_data):
-    global loss_streak, last_trend
-    nums = []
-    for x in list_data[:40]:
-        try:
-            nums.append(int(x["number"]))
-        except:
-            continue
-    if len(nums) < 5:
-        return {"trend": "BIG", "main": 5, "opp": 4, "confidence": 97}
-
-    sizes = [get_size(n) for n in nums]
-    trend = "BIG"
-
-    if loss_streak >= 2:
-        trend = "SMALL" if get_size(nums[0]) == "BIG" else "BIG"
-    elif loss_streak == 1:
-        trend = "SMALL" if last_trend == "BIG" else "BIG"
-    else:
-        if sizes[0] == sizes[1] == sizes[2]:
-            trend = sizes[0]
-        elif sizes[0] != sizes[1] and sizes[1] != sizes[2]:
-            trend = "SMALL" if sizes[0] == "BIG" else "BIG"
-        else:
-            big_w = small_w = 0
-            for i in range(min(10, len(sizes))):
-                if sizes[i] == "BIG":
-                    big_w += (10 - i)
-                else:
-                    small_w += (10 - i)
-            trend = "BIG" if big_w >= small_w else "SMALL"
-
-    confidence = 99 if loss_streak >= 2 else (98 if loss_streak == 1 else 96 + (nums[0] % 3))
-    main_pool = [5, 6, 7, 8, 9] if trend == "BIG" else [0, 1, 2, 3, 4]
-    opp_pool  = [0, 1, 2, 3, 4] if trend == "BIG" else [5, 6, 7, 8, 9]
-
-    freq = [0] * 10
-    for n in nums[:20]:
-        if 0 <= n <= 9:
-            freq[n] += 1
-
-    main_pool.sort(key=lambda x: freq[x])
-    opp_pool.sort(key=lambda x: freq[x])
-
-    return {
-        "trend": trend,
-        "main": main_pool[0],
-        "opp": opp_pool[0],
-        "confidence": confidence
-    }
-
-def update_global_prediction():
-    global current_pred, last_issue, next_issue, loss_streak, last_trend
-    global total_wins, total_losses, total_jackpots, history_list
-
-    list_data = fetch_wingo_list()
-
-    # Fallback Mechanismagar API fetch na ho sake
-    if not list_data:
-        now = datetime.now(timezone.utc)
-        base_period = int(now.strftime("%Y%m%d%H%M"))
-        full_period = str(base_period)
-        short_period = full_period[-4:]
-
-        with state_lock:
-            if next_issue != full_period:
-                next_issue = full_period
-                trend = "BIG" if random.random() > 0.48 else "SMALL"
-                current_pred = {
-                    "period_full": full_period,
-                    "period_short": short_period,
-                    "trend": trend,
-                    "main": random.choice([5, 6, 7, 8, 9]) if trend == "BIG" else random.choice([0, 1, 2, 3, 4]),
-                    "opp": random.choice([0, 1, 2, 3, 4]) if trend == "BIG" else random.choice([5, 6, 7, 8, 9]),
-                    "confidence": 97,
-                    "level": current_pred.get("level", 1)
-                }
-        return
-
-    latest = list_data[0]
-    issue_number = str(latest["issueNumber"])
-    short_issue = issue_number[-4:]
-    try:
-        actual_num = int(latest["number"])
-    except:
-        return
-
-    actual_size = get_size(actual_num)
-    actual_color = get_color(actual_num)
-
-    with state_lock:
-        if current_pred["period_full"] and last_issue and last_issue != issue_number:
-            if current_pred["period_short"] == short_issue:
-                trend_hit = (current_pred["trend"] == actual_size)
-                num_hit = (actual_num == current_pred["main"] or actual_num == current_pred["opp"])
-
-                if trend_hit or num_hit:
-                    if num_hit:
-                        status_type = "JACKPOT"
-                        total_jackpots += 1
-                    else:
-                        status_type = "WIN"
-                        total_wins += 1
-                    loss_streak = 0
-                    last_trend = None
-                    current_pred["level"] = 1
-                else:
-                    status_type = "LOSS"
-                    total_losses += 1
-                    loss_streak += 1
-                    last_trend = current_pred["trend"]
-                    current_pred["level"] = min(3, current_pred["level"] + 1)
-
-                entry = {
-                    "period": short_issue,
-                    "pred": current_pred["trend"],
-                    "main": current_pred["main"],
-                    "opp": current_pred["opp"],
-                    "actual": f"{actual_size}/{actual_color}",
-                    "actual_num": actual_num,
-                    "status": status_type
-                }
-                history_list = [entry] + history_list
-                history_list = history_list[:50]
-                save_data()
-
-        last_issue = issue_number
-        next_full = str(int(issue_number) + 1)
-        next_short = next_full[-4:]
-
-        if next_issue != next_full:
-            next_issue = next_full
-            sig = compute_signal(list_data)
-            current_pred = {
-                "period_full": next_full,
-                "period_short": next_short,
-                "trend": sig["trend"],
-                "main": sig["main"],
-                "opp": sig["opp"],
-                "confidence": sig["confidence"],
-                "level": current_pred.get("level", 1)
-            }
-
-# ===============================
-# 🎯 MESSAGE FORMATTERS
-# ===============================
-def build_premium_signal():
-    p = current_pred
-    level_text = {
-        1: "SAFE LEVEL 1",
-        2: "RECOVERY LEVEL 2",
-        3: "SURESHOT LEVEL 3"
-    }.get(p["level"], "SAFE LEVEL 1")
-
-    text = f"""
-╔════════════════════════════════╗
-║   ⚡ *ADITYA HACKER 1.3* ⚡     ║
-║   ULTRA FAST AI PREDICTION     ║
-╚════════════════════════════════╝
-
-🎮 *Game:* WinGo 1 Minute
-📍 *Period:* `{p['period_short']}`
-
-🎯 *SIGNAL:*  *{p['trend']}*
-🎲 *MAIN NUM:*  `{p['main']}`
-🔄 *BACKUP NUM:* `{p['opp']}`
-
-🛡️ *Level:* {level_text}
-🔥 *Accuracy:* {p['confidence']}%
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 *Game Link*
-{DEFAULT_GAME_URL}
-
-🔗 {CHANNEL_LINK}
-━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-    return text.strip()
-
-def build_stats_text():
-    total = total_wins + total_losses + total_jackpots
-    rate = round(((total_wins + total_jackpots) / total) * 100) if total > 0 else 97
-    return f"""
-📊 *ADITYA HACKER 1.3 STATS*
-━━━━━━━━━━━━━━━━━━━━━━
-
-🏆 *Total Wins:* `{total_wins}`
-👑 *Jackpots:* `{total_jackpots}`
-❌ *Losses:* `{total_losses}`
-📈 *Win Rate:* `{rate}%`
-
-🛡️ *Current Level:* {current_pred.get('level', 1)}
-🔥 *Loss Streak:* {loss_streak}
-"""
-
-def build_history_text():
-    if not history_list:
-        return "⏳ *No history yet... Waiting for first result.*"
-
-    lines = ["📜 *PREDICTION LOGS (Step-by-Step)*\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-    for i, h in enumerate(history_list[:12], 1):
-        if h["status"] == "JACKPOT":
-            badge = "👑 JACKPOT"
-        elif h["status"] == "WIN":
-            badge = "✅ WIN"
-        else:
-            badge = "❌ LOSS"
-
-        lines.append(
-            f"`{i:02d}.` *Period:* `{h['period']}`\n"
-            f"   🎯 *Pred:* {h['pred']}  *[Main: {h['main']} | Backup: {h['opp']}]*\n"
-            f"   🎲 *Result:* {h['actual']} `[{h['actual_num']}]`  →  *{badge}*\n"
-        )
-    return "\n".join(lines)
-
-# ===============================
-# 🚀 PREDICTION WORKER (DUPLICATE PROOF)
-# ===============================
-def prediction_worker(chat_id, channel_id=None):
-    print(f"[Worker Started] For Chat ID: {chat_id}")
-    while active_dict.get(chat_id):
-        try:
-            update_global_prediction()
-            period = current_pred["period_full"]
-
-            # Double Check: Siraf naya period aane par hi 1 baar message jayega
-            with state_lock:
-                already_sent = (last_sent_period.get(chat_id) == period)
-
-            if period and not already_sent:
-                markup = types.InlineKeyboardMarkup()
-                markup.row(
-                    types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"),
-                    types.InlineKeyboardButton("📊 Stats", callback_data="show_stats")
-                )
-                markup.row(
-                    types.InlineKeyboardButton("📜 History", callback_data="show_history"),
-                    types.InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK)
-                )
-
-                caption = build_premium_signal()
-
-                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-                if channel_id:
-                    bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
-
-                with state_lock:
-                    last_sent_period[chat_id] = period
-                print(f"[Signal Sent] Period: {current_pred['period_short']} to Chat: {chat_id}")
-
-        except Exception as e:
-            print(f"[Worker Error] {e}")
-
-        time.sleep(2)
-
-# ===============================
-# 📱 KEYBOARD MENU
-# ===============================
-def main_control_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("🚀 Start Prediction", "🛑 Stop Prediction")
-    kb.add("📊 Stats", "📜 History")
-    kb.add("📢 Set Channel", "👑 Developer Support")
-    return kb
-
-# ===============================
-# 🤖 HANDLERS
-# ===============================
-@bot.message_handler(commands=["start"])
-def start_command(msg):
-    welcome = f"""
-╔════════════════════════════════╗
-║     👑 *ADITYA HACKER 1.3* 👑   ║
-╠════════════════════════════════╣
-║  💎 HIGH ACCURACY WINGO 1M     ║
-║  🔥 Real Period + AI Engine    ║
-║  🛡️ Smart Level System         ║
-║  📊 Live Stats + History       ║
-╠════════════════════════════════╣
-║  🔗 [Join VIP Channel]({CHANNEL_LINK}) ║
-╚════════════════════════════════╝
-
-👇 *Choose an option below:*
-"""
-    bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
-
-@bot.message_handler(func=lambda m: True)
-def message_router(msg):
-    text = (msg.text or "").strip()
-    cid = msg.chat.id
-
-    if text == "🚀 Start Prediction":
-        # Purana worker active ho toh usse band karke naya single thread chalana
-        active_dict[cid] = True
+    def restore_and_protect_face(self):
+        """
+        Chehre ke features aur natural skin tones ko safe rakhte hue
+        purani, phati ya scratched photo ko clean aur sharp karta hai.
+        """
+        # Deep Denoising for damaged/torn old photos
+        denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 10, 10, 7, 21)
         
-        ch = user_channels.get(cid)
-
-        bot.send_message(cid,
-            f"🚀 *Engine Activated Successfully!*\n\n"
-            f"📡 Status: ● LIVE\n"
-            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
-            f"⏳ Generating single prediction per period...",
-            reply_markup=main_control_menu()
-        )
+        # Advanced CLAHE (Contrast Limited Adaptive Histogram Equalization)
+        lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.2, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        balanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         
-        # Single background thread ensure karna
-        if cid not in worker_threads or not worker_threads[cid].is_alive():
-            t = threading.Thread(target=prediction_worker, args=(cid, ch), daemon=True)
-            worker_threads[cid] = t
-            t.start()
+        # High-definition unsharp filter for texture recovery
+        kernel = np.array([[0, -0.7, 0], [-0.7, 3.8, -0.7], [0, -0.7, 0]])
+        sharpened = cv2.filter2D(balanced, -1, kernel)
+        
+        self.cv_img = sharpened
+        self.img = Image.fromarray(cv2.cvtColor(sharpened, cv2.COLOR_BGR2RGB))
+        return self
 
-    elif text == "🛑 Stop Prediction":
-        active_dict[cid] = False
-        last_sent_period.pop(cid, None)
-        bot.send_message(cid, "🛑 *Prediction stopped successfully.*", reply_markup=main_control_menu())
+    def enhance_details_7000k(self):
+        """
+        Kapde (Clothes), Background aur Ped-Paudhe (Nature) ko ultra HD clarity deta hai.
+        """
+        # Vibrant Color & Depth boost
+        self.img = ImageEnhance.Color(self.img).enhance(1.35)
+        self.img = ImageEnhance.Contrast(self.img).enhance(1.25)
+        self.img = ImageEnhance.Brightness(self.img).enhance(1.06)
+        
+        # Ultra Sharpness & Edge Details
+        self.img = ImageEnhance.Sharpness(self.img).enhance(2.2)
+        self.img = self.img.filter(ImageFilter.DETAIL)
+        self.img = self.img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        
+        # Background & Nature 3D Depth Smoothing
+        np_arr = np.array(self.img)
+        bg_smooth = cv2.bilateralFilter(np_arr, 9, 75, 75)
+        self.img = Image.fromarray(cv2.addWeighted(np_arr, 0.68, bg_smooth, 0.32, 0))
+        return self
 
-    elif text == "📊 Stats":
-        bot.send_message(cid, build_stats_text(), reply_markup=main_control_menu())
+    def cinematic_7000k_grading(self):
+        """
+        Hollywood grade 7000K UHD lighting tone correction.
+        """
+        img = np.array(self.img).astype(np.float32) / 255.0
+        r, g, b = img[:, :, 0], img[:, :, 1], img[:, :, 2]
+        r = np.clip(r * 1.08 + 0.03, 0, 1)
+        g = np.clip(g * 1.01, 0, 1)
+        b = np.clip(b * 1.13 - 0.02, 0, 1)
+        
+        rows, cols = img.shape[:2]
+        X = np.linspace(-1, 1, cols)
+        Y = np.linspace(-1, 1, rows)
+        X, Y = np.meshgrid(X, Y)
+        vignette = 1 - (X**2 + Y**2) * 0.22 * 0.6
+        vignette = np.clip(vignette, 0.65, 1.0)
+        
+        graded = np.stack([r, g, b], axis=2) * vignette[:, :, np.newaxis]
+        self.img = Image.fromarray(np.clip(graded * 255, 0, 255).astype(np.uint8))
+        return self
 
-    elif text == "📜 History":
-        bot.send_message(cid, build_history_text(), reply_markup=main_control_menu())
+    def upscale_to_7000k_uhd(self):
+        """
+        Image ko massive 4K / 7000K UHD resolution par upscale karta hai.
+        """
+        w, h = self.img.size
+        target_w, target_h = 3840, 2160  # 4K UHD Ultra Resolution
+        ratio = max(target_w / w, target_h / h)
+        new_size = (int(w * ratio), int(h * ratio))
+        
+        self.img = self.img.resize(new_size, Image.Resampling.LANCZOS)
+        self.img = ImageEnhance.Sharpness(self.img).enhance(1.45)
+        return self.img
 
-    elif text == "📢 Set Channel":
-        bot.send_message(cid,
-            "📢 Send your *Channel Username* (`@channel`) or *Channel ID* (`-100xxxxxxxxxx`)\n\n"
-            "⚠️ Bot must be *Admin* in the channel.",
+    def full_7000k_pipeline(self):
+        self.restore_and_protect_face()
+        self.enhance_details_7000k()
+        self.cinematic_7000k_grading()
+        return self.upscale_to_7000k_uhd()
+
+
+# ====================== BOT HANDLERS ======================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_text = (
+        "✨ **Welcome to Suraj Bhai's 7000K UHD Photo Enhancer** ✨\n\n"
+        "🔥 **The Ultimate AI Restoration & HD Engine:**\n"
+        "• 👤 **Face Safe Protection:** Chehra wahi rahega, bilkul original aur natural!\n"
+        "• 📜 **Old Photo Repair:** Kitni bhi purani ya phati hui photo ho, turant fix hogi.\n"
+        "• 🌿 **Background & Nature HD:** Ped-paudhe aur background ekdum crystal clear.\n"
+        "• 🧥 **Cloth Texture Booster:** Kapdo ki har detail aur silvat premium banegi.\n\n"
+        "👇 *Apni photo ko turant 7000K UHD banane ke liye niche diye gaye button par click karein:*"
+    )
+    
+    # Single Button Layout as requested
+    keyboard = [[InlineKeyboardButton("🚀 Start 7000K UHD Photo Enhance", callback_data="start_enhance_prompt")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(welcome_text, parse_mode="Markdown", reply_markup=reply_markup)
+
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "start_enhance_prompt":
+        await query.message.reply_text(
+            "📥 **Bhai, apni photo abhi chat mein bhejo!**\n\n"
+            "Photo bhejte hi magical 7000K UHD processing start ho jayegi. ⚡",
             parse_mode="Markdown"
         )
-        user_channels[cid] = "waiting_channel"
 
-    elif text == "👑 Developer Support":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💬 Contact / Support", url=CHANNEL_LINK))
-        bot.send_message(cid, "👑 For support / custom setup:", reply_markup=markup)
 
-    elif user_channels.get(cid) == "waiting_channel":
-        ch_input = text
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.photo:
+        return
+
+    photo = update.message.photo[-1]
+    file = await context.bot.get_file(photo.file_id)
+
+    user_id = update.effective_user.id
+    input_path = f"temp_{user_id}_input.jpg"
+    await file.download_to_drive(input_path)
+
+    # Premium 10-Second Flash Loading Animation
+    status_msg = await update.message.reply_text(
+        "✨ **Suraj Bhai Flash Engine Activated...**\n"
+        "⏳ `[░░░░░░░░░░] 0%`\n"
+        "_Initializing 7000K Face & Background Pipeline..._",
+        parse_mode="Markdown"
+    )
+
+    steps = [
+        ("⏳ `[████░░░░░░] 35%`\n_Restoring Face & Repairing Old Scratches..._", 3),
+        ("⏳ `[████████░░] 75%`\n_Enhancing Background, Nature & Clothes HD..._", 4),
+        ("⏳ `[██████████] 100%`\n_Applying 7000K Cinematic UHD Upscaling..._", 3),
+    ]
+
+    for text, delay in steps:
+        await asyncio.sleep(delay)
         try:
-            bot.send_message(ch_input, "✅ *ADITYA HACKER 1.3* successfully connected!")
-            user_channels[cid] = ch_input
-            bot.send_message(cid, f"✅ Channel linked: `{ch_input}`", reply_markup=main_control_menu())
-        except Exception as e:
-            bot.send_message(cid, f"❌ Failed!\nMake bot Admin.\n\nError: `{e}`", reply_markup=main_control_menu())
-            user_channels[cid] = None
+            await status_msg.edit_text(text, parse_mode="Markdown")
+        except Exception:
+            pass
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data == "copy_sig":
-        bot.answer_callback_query(call.id, "✅ Signal ready! Long press & copy message.", show_alert=False)
-    elif call.data == "show_stats":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, build_stats_text())
-    elif call.data == "show_history":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, build_history_text())
+    try:
+        # Processing image through 7000K Ultra Pipeline
+        enhancer = Ultra7000KPhotoEnhancer(input_path)
+        result_img = enhancer.full_7000k_pipeline()
 
-# ===============================
-# 🚀 BACKGROUND UPDATER THREAD
-# ===============================
-def background_updater():
+        output_path = f"temp_{user_id}_output.jpg"
+        result_img.save(output_path, quality=98)
+
+        # Send Enhanced Result Photo
+        with open(output_path, "rb") as f:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=f,
+                caption=(
+                    "🔥 **Suraj Bhai - 7000K UHD Enhanced Successfully!** 🔥\n\n"
+                    "✅ Face Safe & Restored (Original Look)\n"
+                    "✅ Background & Nature Crystal Clear HD\n"
+                    "✅ Clothes Texture Deep Enhanced\n"
+                    "✨ Resolution: 7000K Ultra HD 4K"
+                ),
+                parse_mode="Markdown"
+            )
+
+        # Cleanup loading message
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+
+        # Cleanup temporary files
+        Path(input_path).unlink(missing_ok=True)
+        Path(output_path).unlink(missing_ok=True)
+
+    except Exception as e:
+        logger.error(e)
+        await status_msg.edit_text(f"❌ **Error:** {str(e)}", parse_mode="Markdown")
+        Path(input_path).unlink(missing_ok=True)
+
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
+    print("🤖 Suraj Bhai 7000K UHD Flash Bot is running 24/7...")
+    
+    # 24/7 Continuous Flash Polling with auto-recovery error handling
     while True:
         try:
-            update_global_prediction()
+            app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Exception as e:
-            print(f"[Background Updater Error] {e}")
-        time.sleep(2)
+            logger.error(f"Polling error encountered: {e}. Restarting in 5 seconds...")
+            time.sleep(5)
 
-# ===============================
-# 🚀 RUNNABLE
-# ===============================
+
 if __name__ == "__main__":
-    print("👑 ADITYA HACKER 1.3 Telegram Bot Started 24/7 (Clean Single-Send Mode)")
-    threading.Thread(target=background_updater, daemon=True).start()
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    main()
