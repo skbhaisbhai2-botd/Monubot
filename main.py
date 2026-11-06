@@ -27,7 +27,7 @@ last_sent_period = {}             # chat_id -> last period (double prevention)
 DATA_FILE = "prediction_history.json"
 API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
 
-# Shared prediction state (Exact same as web app)
+# Shared prediction state
 current_pred = {
     "period_full": "",
     "period_short": "----",
@@ -41,12 +41,11 @@ loss_streak = 0
 last_trend = None
 last_issue = ""
 next_issue = ""
-history_list = []                 # Clean history list (max 50)
+history_list = []                 
 total_wins = 0
 total_losses = 0
 total_jackpots = 0
 
-# Lock for thread safety
 state_lock = threading.Lock()
 
 # ===============================
@@ -85,7 +84,7 @@ def save_data():
 load_data()
 
 # ===============================
-# 🔮 EXACT WEB PREDICTION ENGINE
+# 🔮 PREDICTION ENGINE
 # ===============================
 def get_size(n):
     return "BIG" if n >= 5 else "SMALL"
@@ -111,9 +110,7 @@ def fetch_wingo_list():
     return None
 
 def compute_signal(list_data):
-    """Exact same logic as Web ADITYA HACKER 1.3"""
     global loss_streak, last_trend
-
     nums = []
     for x in list_data[:40]:
         try:
@@ -145,7 +142,6 @@ def compute_signal(list_data):
             trend = "BIG" if big_w >= small_w else "SMALL"
 
     confidence = 99 if loss_streak >= 2 else (98 if loss_streak == 1 else 96 + (nums[0] % 3))
-
     main_pool = [5, 6, 7, 8, 9] if trend == "BIG" else [0, 1, 2, 3, 4]
     opp_pool  = [0, 1, 2, 3, 4] if trend == "BIG" else [5, 6, 7, 8, 9]
 
@@ -165,7 +161,6 @@ def compute_signal(list_data):
     }
 
 def update_global_prediction():
-    """Fetch latest data and update global prediction consistently"""
     global current_pred, last_issue, next_issue, loss_streak, last_trend
     global total_wins, total_losses, total_jackpots, history_list
 
@@ -185,7 +180,6 @@ def update_global_prediction():
     actual_color = get_color(actual_num)
 
     with state_lock:
-        # Check previous result
         if current_pred["period_full"] and last_issue and last_issue != issue_number:
             if current_pred["period_short"] == short_issue:
                 trend_hit = (current_pred["trend"] == actual_size)
@@ -237,9 +231,6 @@ def update_global_prediction():
                 "confidence": sig["confidence"],
                 "level": current_pred.get("level", 1)
             }
-
-def get_remaining_seconds():
-    return max(1, 60 - datetime.now(timezone.utc).second)
 
 # ===============================
 # 🎯 MESSAGE FORMATTERS
@@ -310,7 +301,6 @@ def build_history_text():
         else:
             badge = "❌ LOSS"
 
-        # Step by step formatting as requested
         lines.append(
             f"`{i:02d}.` *Period:* `{h['period']}`\n"
             f"   🎯 *Pred:* {h['pred']}  *[Main: {h['main']} | Backup: {h['opp']}]*\n"
@@ -319,49 +309,43 @@ def build_history_text():
     return "\n".join(lines)
 
 # ===============================
-# 🚀 PREDICTION WORKER THREAD
+# 🚀 ROBUST PREDICTION WORKER
 # ===============================
 def prediction_worker(chat_id, channel_id=None):
+    print(f"[Worker Started] For Chat ID: {chat_id}")
     while active_dict.get(chat_id):
-        update_global_prediction()
-
-        period = current_pred["period_full"]
-
-        # Prevent sending duplicate signals for the same period
-        if last_sent_period.get(chat_id) == period:
-            time.sleep(1)
-            continue
-
-        markup = types.InlineKeyboardMarkup()
-        markup.row(
-            types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"),
-            types.InlineKeyboardButton("📊 Stats", callback_data="show_stats")
-        )
-        markup.row(
-            types.InlineKeyboardButton("📜 History", callback_data="show_history"),
-            types.InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK)
-        )
-        markup.row(
-            types.InlineKeyboardButton("👑 99% WIN HACK", url=WIN_99_LINK)
-        )
-
-        caption = build_premium_signal()
-
         try:
-            bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-            if channel_id:
-                bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
+            update_global_prediction()
+            period = current_pred["period_full"]
+
+            # Agar naya period shuru ho gaya hai aur signal nahi bheja toh turant bhejo
+            if period and last_sent_period.get(chat_id) != period:
+                markup = types.InlineKeyboardMarkup()
+                markup.row(
+                    types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"),
+                    types.InlineKeyboardButton("📊 Stats", callback_data="show_stats")
+                )
+                markup.row(
+                    types.InlineKeyboardButton("📜 History", callback_data="show_history"),
+                    types.InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK)
+                )
+                markup.row(
+                    types.InlineKeyboardButton("👑 99% WIN HACK", url=WIN_99_LINK)
+                )
+
+                caption = build_premium_signal()
+
+                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
+                if channel_id:
+                    bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
+
+                last_sent_period[chat_id] = period
+                print(f"[Signal Sent] Period: {current_pred['period_short']} to Chat: {chat_id}")
+
         except Exception as e:
-            print(f"[Send Error] {e}")
-
-        last_sent_period[chat_id] = period
-
-        # Wait smoothly until the next period rolls over
-        remaining = get_remaining_seconds()
-        for _ in range(remaining):
-            if not active_dict.get(chat_id):
-                return
-            time.sleep(1)
+            print(f"[Worker Error] {e}")
+        
+        time.sleep(2) # Fast check loop
 
 # ===============================
 # 📱 KEYBOARD MENU
@@ -401,26 +385,27 @@ def message_router(msg):
     cid = msg.chat.id
 
     if text == "🚀 Start Prediction":
-        if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ Prediction already running!", reply_markup=main_control_menu())
-            return
-
+        # Force restart active state so it never gets stuck on "Already running!"
         active_dict[cid] = True
+        last_sent_period.pop(cid, None)  # Reset last sent period check
+
         ch = user_channels.get(cid)
 
         bot.send_message(cid,
-            f"🚀 *Engine Activated!*\n\n"
+            f"🚀 *Engine Activated Successfully!*\n\n"
             f"📡 Status: ● LIVE\n"
             f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
-            f"⏳ Waiting for next period...",
+            f"⏳ Fetching live web prediction...",
             reply_markup=main_control_menu()
         )
+        
+        # Start fresh background thread for this chat
         threading.Thread(target=prediction_worker, args=(cid, ch), daemon=True).start()
 
     elif text == "🛑 Stop Prediction":
         active_dict[cid] = False
         last_sent_period.pop(cid, None)
-        bot.send_message(cid, "🛑 *Prediction stopped.*", reply_markup=main_control_menu())
+        bot.send_message(cid, "🛑 *Prediction stopped successfully.*", reply_markup=main_control_menu())
 
     elif text == "📊 Stats":
         bot.send_message(cid, build_stats_text(), reply_markup=main_control_menu())
@@ -463,7 +448,7 @@ def callback_handler(call):
         bot.send_message(call.message.chat.id, build_history_text())
 
 # ===============================
-# 🚀 24/7 BACKGROUND UPDATER THREAD
+# 🚀 BACKGROUND UPDATER
 # ===============================
 def background_updater():
     while True:
@@ -471,12 +456,12 @@ def background_updater():
             update_global_prediction()
         except Exception as e:
             print(f"[Background Updater Error] {e}")
-        time.sleep(2.5)
+        time.sleep(2)
 
 # ===============================
-# 🚀 MAIN RUNNABLE
+# 🚀 RUNNABLE
 # ===============================
 if __name__ == "__main__":
-    print("👑 ADITYA HACKER 1.3 Telegram Bot Started Successfully 24/7")
+    print("👑 ADITYA HACKER 1.3 Telegram Bot Started 24/7")
     threading.Thread(target=background_updater, daemon=True).start()
     bot.infinity_polling(timeout=60, long_polling_timeout=60)
