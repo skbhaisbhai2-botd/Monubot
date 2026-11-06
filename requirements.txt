@@ -1,4 +1,4 @@
-npm install -g pm2
-pm2 start main.py --interpreter python3 --name "suraj-7000k-bot"
-pm2 save
-pm2 startup
+python-telegram-bot==21.10
+Pillow==11.1.0
+opencv-python-headless==4.11.0.86
+numpy==2.2.2
