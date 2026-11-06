@@ -14,8 +14,8 @@ from telebot import types
 BOT_TOKEN = "9221404814:AAHUfJxq5Ei9dUMt1sgMkRKXOyoJzn-Q55s"
 ADMIN_ID = 7741897793
 CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-WIN_99_LINK = "https://cosmofeed.com/ps/6acee92cebe5600013b73f00"
-DEFAULT_GAME_URL = "https://www.91appq.com/#/register?invitationCode=747881278052"
+WIN_99_LINK = "https://t.me/+UemRGWr-B2wzMmFl"
+DEFAULT_GAME_URL = "https://bdg3.cc//#/register?invitationCode=3112216930497"
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
@@ -202,7 +202,7 @@ def build_premium_signal():
 🎮 *Game Link*
 {DEFAULT_GAME_URL}
 
-📢 *Telegram:* @ADITYAHACKER13
+📢 *Telegram:* ADITYA RAJPUT
 🔗 {CHANNEL_LINK}
 ━━━━━━━━━━━━━━━━━━━━━━━━
 """
