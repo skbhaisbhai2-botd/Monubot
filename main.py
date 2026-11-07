@@ -2,6 +2,9 @@ import os
 import time
 import asyncio
 import logging
+import threading
+import http.server
+import socketserver
 from pathlib import Path
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -25,6 +28,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ====================== RENDER PORT BINDING FIX ======================
+# Render Web Service ke liye HTTP server jo port check pass karega
+PORT = int(os.environ.get("PORT", 10000))
+
+class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Suraj Bhai Bot is Alive and Running 24/7!")
+
+def start_server():
+    with socketserver.TCPServer(("", PORT), HealthCheckHandler) as httpd:
+        logger.info(f"HTTP server running on port {PORT}")
+        httpd.serve_forever()
+
+# Start HTTP server in a separate thread
+threading.Thread(target=start_server, daemon=True).start()
+
 
 # ====================== ULTRA FAST 7000K ENHANCER ======================
 class FastUltraEnhancer:
@@ -32,18 +53,15 @@ class FastUltraEnhancer:
         self.img = Image.open(image_path).convert("RGB")
 
     def process_7000k_uhd(self):
-        # Face Protection & Detail Boost via PIL
         self.img = ImageOps.autocontrast(self.img, cutoff=2)
         self.img = ImageEnhance.Color(self.img).enhance(1.35)
         self.img = ImageEnhance.Contrast(self.img).enhance(1.22)
         self.img = ImageEnhance.Brightness(self.img).enhance(1.06)
         
-        # Deep Sharpening for Clothes, Nature & Background
         self.img = ImageEnhance.Sharpness(self.img).enhance(2.2)
         self.img = self.img.filter(ImageFilter.DETAIL)
         self.img = self.img.filter(ImageFilter.EDGE_ENHANCE_MORE)
         
-        # Massive 4K / 7000K UHD Upscale
         w, h = self.img.size
         target_w, target_h = 3840, 2160
         ratio = max(target_w / w, target_h / h)
@@ -92,7 +110,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     input_path = f"temp_{user_id}_input.jpg"
-    await file.download_to_drive(input_path)
+    await file.download_to_dest(input_path) if hasattr(file, "download_to_dest") else await file.download_to_drive(input_path)
 
     status_msg = await update.message.reply_text(
         "✨ **Suraj Bhai Flash Engine Activated...**\n"
