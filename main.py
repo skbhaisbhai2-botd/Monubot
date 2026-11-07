@@ -19,7 +19,7 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import numpy as np
 
 # ====================== BOT TOKEN ======================
-BOT_TOKEN = "8995770613:AAEK1Qca2-0Sh8h_WeQXg_bD9wE1VevY-1w"
+BOT_TOKEN = "9021016276:AAFZT8mfXHf6K20q-xLv_5WJP51nsnSA4UE"
 # =======================================================
 
 logging.basicConfig(
