@@ -39,10 +39,8 @@ class Ultra7000KPhotoEnhancer:
         Chehre ke features aur natural skin tones ko safe rakhte hue
         purani, phati ya scratched photo ko clean aur sharp karta hai.
         """
-        # Deep Denoising for damaged/torn old photos
         denoised = cv2.fastNlMeansDenoisingColored(self.cv_img, None, 10, 10, 7, 21)
         
-        # Advanced CLAHE (Contrast Limited Adaptive Histogram Equalization)
         lab = cv2.cvtColor(denoised, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         clahe = cv2.createCLAHE(clipLimit=3.2, tileGridSize=(8, 8))
@@ -50,7 +48,6 @@ class Ultra7000KPhotoEnhancer:
         lab = cv2.merge([l, a, b])
         balanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         
-        # High-definition unsharp filter for texture recovery
         kernel = np.array([[0, -0.7, 0], [-0.7, 3.8, -0.7], [0, -0.7, 0]])
         sharpened = cv2.filter2D(balanced, -1, kernel)
         
@@ -60,19 +57,16 @@ class Ultra7000KPhotoEnhancer:
 
     def enhance_details_7000k(self):
         """
-        Kapde (Clothes), Background aur Ped-Paudhe (Nature) ko ultra HD clarity deta hai.
+        Kapde, Background, aur Ped-Paudhe (Nature) ko ultra HD clarity deta hai.
         """
-        # Vibrant Color & Depth boost
         self.img = ImageEnhance.Color(self.img).enhance(1.35)
         self.img = ImageEnhance.Contrast(self.img).enhance(1.25)
         self.img = ImageEnhance.Brightness(self.img).enhance(1.06)
         
-        # Ultra Sharpness & Edge Details
         self.img = ImageEnhance.Sharpness(self.img).enhance(2.2)
         self.img = self.img.filter(ImageFilter.DETAIL)
         self.img = self.img.filter(ImageFilter.EDGE_ENHANCE_MORE)
         
-        # Background & Nature 3D Depth Smoothing
         np_arr = np.array(self.img)
         bg_smooth = cv2.bilateralFilter(np_arr, 9, 75, 75)
         self.img = Image.fromarray(cv2.addWeighted(np_arr, 0.68, bg_smooth, 0.32, 0))
@@ -104,7 +98,7 @@ class Ultra7000KPhotoEnhancer:
         Image ko massive 4K / 7000K UHD resolution par upscale karta hai.
         """
         w, h = self.img.size
-        target_w, target_h = 3840, 2160  # 4K UHD Ultra Resolution
+        target_w, target_h = 3840, 2160
         ratio = max(target_w / w, target_h / h)
         new_size = (int(w * ratio), int(h * ratio))
         
@@ -131,7 +125,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👇 *Apni photo ko turant 7000K UHD banane ke liye niche diye gaye button par click karein:*"
     )
     
-    # Single Button Layout as requested
     keyboard = [[InlineKeyboardButton("🚀 Start 7000K UHD Photo Enhance", callback_data="start_enhance_prompt")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -161,7 +154,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     input_path = f"temp_{user_id}_input.jpg"
     await file.download_to_drive(input_path)
 
-    # Premium 10-Second Flash Loading Animation
     status_msg = await update.message.reply_text(
         "✨ **Suraj Bhai Flash Engine Activated...**\n"
         "⏳ `[░░░░░░░░░░] 0%`\n"
@@ -183,14 +175,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     try:
-        # Processing image through 7000K Ultra Pipeline
         enhancer = Ultra7000KPhotoEnhancer(input_path)
         result_img = enhancer.full_7000k_pipeline()
 
         output_path = f"temp_{user_id}_output.jpg"
         result_img.save(output_path, quality=98)
 
-        # Send Enhanced Result Photo
         with open(output_path, "rb") as f:
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
@@ -205,13 +195,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
 
-        # Cleanup loading message
         try:
             await status_msg.delete()
         except Exception:
             pass
 
-        # Cleanup temporary files
         Path(input_path).unlink(missing_ok=True)
         Path(output_path).unlink(missing_ok=True)
 
@@ -230,7 +218,6 @@ def main():
 
     print("🤖 Suraj Bhai 7000K UHD Flash Bot is running 24/7...")
     
-    # 24/7 Continuous Flash Polling with auto-recovery error handling
     while True:
         try:
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
