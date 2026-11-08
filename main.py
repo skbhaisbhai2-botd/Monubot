@@ -18,9 +18,9 @@ from telegram.ext import (
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import numpy as np
 
-# ====================== BOT TOKEN ======================
+# ====================== YOUR BOT TOKEN ======================
 BOT_TOKEN = "9021016276:AAFZT8mfXHf6K20q-xLv_5WJP51nsnSA4UE"
-# =======================================================
+# ============================================================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -28,26 +28,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ====================== RENDER PORT BINDING FIX ======================
-# Render Web Service ke liye HTTP server jo port check pass karega
+# Render Web Service Port Binding
 PORT = int(os.environ.get("PORT", 10000))
 
 class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Suraj Bhai Bot is Alive and Running 24/7!")
+        self.wfile.write(b"Suraj Bhai 7000K Bot is Live!")
 
 def start_server():
     with socketserver.TCPServer(("", PORT), HealthCheckHandler) as httpd:
-        logger.info(f"HTTP server running on port {PORT}")
         httpd.serve_forever()
 
-# Start HTTP server in a separate thread
 threading.Thread(target=start_server, daemon=True).start()
 
 
-# ====================== ULTRA FAST 7000K ENHANCER ======================
 class FastUltraEnhancer:
     def __init__(self, image_path: str):
         self.img = Image.open(image_path).convert("RGB")
@@ -72,7 +68,6 @@ class FastUltraEnhancer:
         return self.img
 
 
-# ====================== BOT HANDLERS ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "✨ **Welcome to Suraj Bhai's 7000K UHD Photo Enhancer** ✨\n\n"
@@ -110,7 +105,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     input_path = f"temp_{user_id}_input.jpg"
-    await file.download_to_dest(input_path) if hasattr(file, "download_to_dest") else await file.download_to_drive(input_path)
+    await file.download_to_drive(input_path)
 
     status_msg = await update.message.reply_text(
         "✨ **Suraj Bhai Flash Engine Activated...**\n"
@@ -174,14 +169,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("🤖 Suraj Bhai 7000K UHD Flash Bot is running 24/7...")
-    
-    while True:
-        try:
-            app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-        except Exception as e:
-            logger.error(f"Polling error: {e}. Restarting in 3 seconds...")
-            time.sleep(3)
+    print("🤖 Suraj Bhai 7000K UHD Bot is starting...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
