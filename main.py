@@ -7,12 +7,21 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 from flask import Flask
 
-# ================= CONFIGURATION ==========
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9067872064:AAE6kDIUPO-yesoJ3m3B9nB4CySc-mMm6o0"
+CHANNEL_SIGNATURE = "SK BHAI"
 # =================================================
 
 # Logging setup
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(messag
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
+
 @flask_app.route('/')
 def home():
     return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
