@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+import urllib.request
 import requests
 import telebot
 from telebot import types
@@ -24,13 +25,9 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 # ===============================
 # 🌐 GLOBAL STATES & STORAGE
 # ===============================
-# user_selected_market[chat_id] = "30S" or "1M"
 user_selected_market = {}
-# active_subscriptions[(chat_id, market)] = True/False
 active_subscriptions = {}
-# user_channels[chat_id] = channel_id_or_username or "waiting_channel"
 user_channels = {}
-# last_sent_period[(chat_id, market)] = period_str
 last_sent_period = {}
 
 state_lock = threading.Lock()
@@ -68,7 +65,10 @@ def load_data():
             raw = json.load(f)
         for m in ["30S", "1M"]:
             if m in raw and isinstance(raw[m], dict):
-                base = create_empty_market_state("SMALL" if m == "30S" else "BIG", 4 if m == "30S" else 7)
+                base = create_empty_market_state(
+                    "SMALL" if m == "30S" else "BIG",
+                    4 if m == "30S" else 7,
+                )
                 base.update(raw[m])
                 base["history"] = base.get("history", [])[:20]
                 markets_data[m] = base
@@ -190,34 +190,57 @@ def calculate_smart_prediction(history_list: list, next_period_str: str) -> dict
     return {"type": predicted_type, "number": chosen_number}
 
 
+def extract_list_from_json(data: dict):
+    if not isinstance(data, dict):
+        return None
+    raw_list = (
+        data.get("data", {}).get("list")
+        if isinstance(data.get("data"), dict)
+        else None
+    )
+    if raw_list is None:
+        raw_list = data.get("data") if isinstance(data.get("data"), list) else data.get("list")
+    if isinstance(raw_list, list) and len(raw_list) > 0:
+        parsed = [parse_item(x) for x in raw_list if isinstance(x, dict)]
+        parsed = [x for x in parsed if x["issue"]]
+        if parsed:
+            return parsed
+    return None
+
+
 def fetch_market_list(market: str):
     url = APIS.get(market)
     if not url:
         return None
+    full_url = f"{url}?_={int(time.time() * 1000)}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://draw.ar-lottery01.com/",
         "Origin": "https://draw.ar-lottery01.com",
     }
+
+    # Primary fetch via requests
     try:
-        resp = requests.get(f"{url}?_={int(time.time() * 1000)}", headers=headers, timeout=5)
+        resp = requests.get(full_url, headers=headers, timeout=6)
         if resp.status_code == 200:
-            data = resp.json()
-            raw_list = (
-                data.get("data", {}).get("list")
-                if isinstance(data.get("data"), dict)
-                else None
-            )
-            if raw_list is None:
-                raw_list = data.get("data") if isinstance(data.get("data"), list) else data.get("list")
-            if isinstance(raw_list, list) and len(raw_list) > 0:
-                parsed = [parse_item(x) for x in raw_list if isinstance(x, dict)]
-                parsed = [x for x in parsed if x["issue"]]
-                if parsed:
-                    return parsed
+            parsed = extract_list_from_json(resp.json())
+            if parsed:
+                return parsed
     except Exception as e:
-        print(f"[API Warning {market}] {e}")
+        print(f"[Requests Warning {market}] {e}")
+
+    # Fallback fetch via urllib
+    try:
+        req = urllib.request.Request(full_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as r:
+            body = r.read().decode("utf-8", errors="ignore")
+            parsed = extract_list_from_json(json.loads(body))
+            if parsed:
+                return parsed
+    except Exception as e:
+        print(f"[Urllib Warning {market}] {e}")
+
     return None
 
 
@@ -233,24 +256,25 @@ def update_market_state(market: str):
     with state_lock:
         st = markets_data[market]
 
-        if st["is_initial"]:
+        if st["is_initial"] or not st["active_period"]:
             st["is_initial"] = False
             st["last_issue"] = latest["issue"]
             st["active_period"] = next_period
             st["prediction"] = calculate_smart_prediction(parsed_list, next_period)
 
-            seed_history = []
-            for item in parsed_list[:9]:
-                seed_history.append({
-                    "period": item["issue"],
-                    "predicted_type": item["type"],
-                    "predicted_num": item["number"],
-                    "result_type": item["type"],
-                    "result_num": item["number"],
-                    "status": "WIN",
-                })
-            st["history"] = seed_history
-            st["total_wins"] = len(seed_history)
+            if not st["history"]:
+                seed_history = []
+                for item in parsed_list[:9]:
+                    seed_history.append({
+                        "period": item["issue"],
+                        "predicted_type": item["type"],
+                        "predicted_num": item["number"],
+                        "result_type": item["type"],
+                        "result_num": item["number"],
+                        "status": "WIN",
+                    })
+                st["history"] = seed_history
+                st["total_wins"] = len(seed_history)
             changed = True
 
         elif latest["issue"] != st["last_issue"]:
@@ -308,6 +332,7 @@ def format_period_pair(period_str: str) -> str:
 
 
 def build_signal_message(market: str) -> str:
+    update_market_state(market)
     with state_lock:
         st = markets_data[market]
         period = st["active_period"] or "----"
@@ -348,6 +373,7 @@ def build_signal_message(market: str) -> str:
 
 
 def build_stats_message(market: str) -> str:
+    update_market_state(market)
     with state_lock:
         st = markets_data[market]
         wins = st["total_wins"]
@@ -374,6 +400,7 @@ def build_stats_message(market: str) -> str:
 
 
 def build_history_message(market: str) -> str:
+    update_market_state(market)
     with state_lock:
         hist = list(markets_data[market]["history"][:10])
         active_p = markets_data[market]["active_period"]
@@ -510,6 +537,9 @@ def handle_start(message):
     for m in ["30S", "1M"]:
         update_market_state(m)
 
+    with state_lock:
+        active_p = markets_data[active_m]["active_period"] or "----"
+
     welcome = f"""
 ╔════════════════════════════════╗
 ║   👑 *WINGO 30S & 1M SYNC BOT* 👑  ║
@@ -523,6 +553,7 @@ def handle_start(message):
 ╚════════════════════════════════╝
 
 📌 *Selected Market:* `{active_m}`
+📍 *Active Period:* {format_period_pair(active_p)}
 👇 *Neeche se market ya action chunein:*
 """.strip()
 
@@ -541,7 +572,6 @@ def handle_text(message):
 
     if text == "⏱️ 30S Market":
         user_selected_market[chat_id] = "30S"
-        update_market_state("30S")
         bot.send_message(
             chat_id,
             "✅ *Market switched to WinGo 30 Seconds (`30S`)*",
@@ -551,7 +581,6 @@ def handle_text(message):
 
     elif text == "⏱️ 1M Market":
         user_selected_market[chat_id] = "1M"
-        update_market_state("1M")
         bot.send_message(
             chat_id,
             "✅ *Market switched to WinGo 1 Minute (`1M`)*",
@@ -594,7 +623,6 @@ def handle_text(message):
 
     elif text == "🎯 Current Signal":
         m = get_user_market(chat_id)
-        update_market_state(m)
         bot.send_message(
             chat_id,
             build_signal_message(m),
@@ -604,7 +632,6 @@ def handle_text(message):
 
     elif text == "📊 Stats":
         m = get_user_market(chat_id)
-        update_market_state(m)
         bot.send_message(
             chat_id,
             build_stats_message(m),
@@ -613,7 +640,6 @@ def handle_text(message):
 
     elif text == "📜 History":
         m = get_user_market(chat_id)
-        update_market_state(m)
         bot.send_message(
             chat_id,
             build_history_message(m),
@@ -657,13 +683,11 @@ def handle_callback(call):
 
     if data.startswith("stats_"):
         m = data.split("_", 1)[1]
-        update_market_state(m)
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, build_stats_message(m))
 
     elif data.startswith("hist_"):
         m = data.split("_", 1)[1]
-        update_market_state(m)
         bot.answer_callback_query(call.id)
         bot.send_message(chat_id, build_history_message(m))
 
@@ -671,7 +695,6 @@ def handle_callback(call):
         m = data.split("_", 1)[1]
         if m in ["30S", "1M"]:
             user_selected_market[chat_id] = m
-            update_market_state(m)
             bot.answer_callback_query(call.id, f"Switched to {m}")
             bot.send_message(
                 chat_id,
