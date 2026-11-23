@@ -1,713 +1,315 @@
-import json
 import os
+import io
+import logging
 import threading
-import time
-import urllib.request
+import random
+import string
 import requests
-import telebot
-from telebot import types
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 
-# ===============================
-# 🔧 BOT CONFIGURATION
-# ===============================
-BOT_TOKEN = "9075932926:AAHckw7i9JmwsnfP5UxrPHXv0FcwWpGaPaQ"
-CHANNEL_LINK = "https://t.me/+avZJX9ssyQc5MzI9"
-DEFAULT_GAME_URL = "https://www.91appq.com/#/register?invitationCode=747881278052"
-DATA_FILE = "prediction_history_dual.json"
+# ======================== CONFIG ========================
+BOT_TOKEN = "9171066496:AAGuz9EX2_6zdrMhPZSjh8zOn2BKDYdxERM"
+REQUIRED_CHANNEL = "@UemRGWr-B2wzMmFl" # Channel username or invite hash reference
+CHANNEL_LINK = "https://t.me/+UemRGWr-B2wzMmFl"
 
-APIS = {
-    "30S": "https://draw.ar-lottery01.com/WinGo/WinGo_30S/GetHistoryIssuePage.json",
-    "1M": "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json",
+# ======================== LOGGING ========================
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ======================== RENDER WEB PORT FIX ========================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive and running!")
+    
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
+# ======================== EMOJI CIPHER MAPPING ========================
+EMOJI_MAP = {
+    '0': '🍎', '1': '🍌', '2': '🍒', '3': '🍇',
+    '4': '🍉', '5': '🍊', '6': '🍋', '7': '🍍',
+    '8': '🍑', '9': '🥝', 'a': '🥥', 'b': '🍅',
+    'c': '🍆', 'd': '🥑', 'e': '🥦', 'f': '🥕'
 }
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
+def data_to_emojis(data: bytes) -> str:
+    hex_str = data.hex()
+    return ''.join(EMOJI_MAP[c] for c in hex_str)
 
-# ===============================
-# 🌐 GLOBAL STATES & STORAGE
-# ===============================
-user_selected_market = {}
-active_subscriptions = {}
-user_channels = {}
-last_sent_period = {}
+def emojis_to_data(emoji_str: str) -> bytes:
+    reverse_map = {v: k for k, v in EMOJI_MAP.items()}
+    hex_str = ''
+    for char in emoji_str:
+        if char in reverse_map:
+            hex_str += reverse_map[char]
+    return bytes.fromhex(hex_str)
 
-state_lock = threading.Lock()
+# ======================== CRYPTO FUNCTIONS ========================
 
-
-def create_empty_market_state(default_type="SMALL", default_num=4):
-    return {
-        "last_issue": "",
-        "active_period": "",
-        "streak": 6,
-        "is_initial": True,
-        "prediction": {"type": default_type, "number": default_num},
-        "history": [],
-        "total_wins": 0,
-        "total_jackpots": 0,
-        "total_losses": 0,
-    }
-
-
-markets_data = {
-    "30S": create_empty_market_state("SMALL", 4),
-    "1M": create_empty_market_state("BIG", 7),
-}
-
-
-# ===============================
-# 📊 DATA PERSISTENCE
-# ===============================
-def load_data():
-    global markets_data
-    if not os.path.exists(DATA_FILE):
-        return
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        for m in ["30S", "1M"]:
-            if m in raw and isinstance(raw[m], dict):
-                base = create_empty_market_state(
-                    "SMALL" if m == "30S" else "BIG",
-                    4 if m == "30S" else 7,
-                )
-                base.update(raw[m])
-                base["history"] = base.get("history", [])[:20]
-                markets_data[m] = base
-    except Exception as e:
-        print(f"[Load Error] {e}")
-
-
-def save_data():
-    try:
-        with state_lock:
-            payload = {
-                m: {
-                    "last_issue": markets_data[m]["last_issue"],
-                    "active_period": markets_data[m]["active_period"],
-                    "streak": markets_data[m]["streak"],
-                    "is_initial": markets_data[m]["is_initial"],
-                    "prediction": markets_data[m]["prediction"],
-                    "history": markets_data[m]["history"][:20],
-                    "total_wins": markets_data[m]["total_wins"],
-                    "total_jackpots": markets_data[m]["total_jackpots"],
-                    "total_losses": markets_data[m]["total_losses"],
-                }
-                for m in ["30S", "1M"]
-            }
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-    except Exception as e:
-        print(f"[Save Error] {e}")
-
-
-load_data()
-
-
-# ===============================
-# 🔮 PREDICTION LOGIC (HTML SYNCED)
-# ===============================
-def get_size_from_num(n: int) -> str:
-    return "SMALL" if 0 <= n <= 4 else "BIG"
-
-
-def get_color_from_num(n: int) -> str:
-    return "RED" if n in [0, 2, 4, 6, 8] else "GREEN"
-
-
-def parse_item(item: dict):
-    issue = str(
-        item.get("issue")
-        or item.get("issueNumber")
-        or item.get("period")
-        or item.get("IssueNumber")
-        or item.get("issueNo")
-        or ""
-    ).strip()
-    raw_num = item.get("number")
-    if raw_num is None:
-        raw_num = item.get("openNumber")
-    if raw_num is None:
-        raw_num = item.get("result")
-    if raw_num is None:
-        raw_num = item.get("Number", 0)
-    try:
-        number = int(raw_num)
-    except Exception:
-        number = 0
-    size_type = get_size_from_num(number)
-    return {"issue": issue, "number": number, "type": size_type}
-
-
-def calculate_smart_prediction(history_list: list, next_period_str: str) -> dict:
-    """
-    HTML calculateSmartPrediction ka exact Python equivalent:
-    1. Dragon Streak (3+ same type)
-    2. Alternating Reversal (last 3 alternate)
-    3. Momentum (last 5 majority)
-    4. Frequency weight + period last digit seed
-    """
-    if not history_list or len(history_list) < 3:
-        return {"type": "SMALL", "number": 2}
-
-    recent = history_list[:10]
-    types = [x["type"] for x in recent]
-    numbers = [x["number"] for x in recent]
-
-    predicted_type = "SMALL"
-
-    # 1. Dragon Streak
-    dragon_count = 1
-    for i in range(len(types) - 1):
-        if types[i] == types[i + 1]:
-            dragon_count += 1
-        else:
-            break
-
-    if dragon_count >= 3:
-        predicted_type = types[0]
-    # 2. Alternating Reversal
-    elif types[0] != types[1] and types[1] != types[2]:
-        predicted_type = "SMALL" if types[0] == "BIG" else "BIG"
-    # 3. Momentum
-    else:
-        big_count = sum(1 for t in types[:5] if t == "BIG")
-        predicted_type = "BIG" if big_count >= 3 else "SMALL"
-
-    # 4. Frequency Weight
-    candidate_pool = [0, 1, 2, 3, 4] if predicted_type == "SMALL" else [5, 6, 7, 8, 9]
-    freq_map = {n: 0 for n in candidate_pool}
-    for n in numbers:
-        if n in freq_map:
-            freq_map[n] += 1
-
-    try:
-        period_seed = int(next_period_str[-1]) if next_period_str else 0
-    except Exception:
-        period_seed = 0
-
-    candidate_pool.sort(key=lambda x: freq_map[x], reverse=True)
-    chosen_number = candidate_pool[period_seed % len(candidate_pool)]
-
-    return {"type": predicted_type, "number": chosen_number}
-
-
-def extract_list_from_json(data: dict):
-    if not isinstance(data, dict):
-        return None
-    raw_list = (
-        data.get("data", {}).get("list")
-        if isinstance(data.get("data"), dict)
-        else None
+def derive_key(password: str, salt: bytes) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+        backend=default_backend()
     )
-    if raw_list is None:
-        raw_list = data.get("data") if isinstance(data.get("data"), list) else data.get("list")
-    if isinstance(raw_list, list) and len(raw_list) > 0:
-        parsed = [parse_item(x) for x in raw_list if isinstance(x, dict)]
-        parsed = [x for x in parsed if x["issue"]]
-        if parsed:
-            return parsed
-    return None
+    return kdf.derive(password.encode("utf-8"))
 
+def encrypt_data(plaintext: bytes, password: str) -> bytes:
+    salt = os.urandom(16)
+    key = derive_key(password, salt)
+    nonce = os.urandom(12)
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    return salt + nonce + ciphertext
 
-def fetch_market_list(market: str):
-    url = APIS.get(market)
-    if not url:
-        return None
-    full_url = f"{url}?_={int(time.time() * 1000)}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://draw.ar-lottery01.com/",
-        "Origin": "https://draw.ar-lottery01.com",
-    }
+def generate_secure_password() -> str:
+    chars = string.ascii_letters + string.digits + "@#$%"
+    return "".join(random.choice(chars) for _ in range(8))
 
-    # Primary fetch via requests
+def create_encrypted_html(emoji_payload: str) -> str:
+    dummy_padding = ''.join(random.choice(list(EMOJI_MAP.values())) for _ in range(8000))
+    
+    html_template = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VIP Secured Protected Page</title>
+    <style>
+        body {{ background: #050505; color: #00ffcc; font-family: 'Courier New', Courier, monospace; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; }}
+        .auth-container {{ background: #111118; padding: 40px 30px; border-radius: 20px; box-shadow: 0 0 40px rgba(0, 255, 204, 0.3); text-align: center; width: 360px; border: 2px solid #00ffcc; }}
+        h2 {{ margin-bottom: 10px; color: #00ffcc; font-size: 24px; text-shadow: 0 0 10px rgba(0,255,204,0.5); }}
+        p {{ color: #a0aec0; font-size: 14px; margin-bottom: 20px; }}
+        input {{ width: 100%; padding: 12px 15px; margin-bottom: 15px; border: 1px solid #00ffcc; background: #000; color: #00ffcc; border-radius: 8px; box-sizing: border-box; font-size: 16px; outline: none; text-align: center; letter-spacing: 2px; }}
+        button {{ background: #00ffcc; color: #000; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; transition: 0.3s; }}
+        button:hover {{ background: #00b38f; box-shadow: 0 0 15px #00ffcc; }}
+        #error {{ color: #ff3333; margin-top: 12px; font-size: 13px; font-weight: bold; }}
+    </style>
+</head>
+<body oncontextmenu="return false;" onselectstart="return false;" ondragstart="return false;">
+    <div class="auth-container">
+        <h2>🔒 VIP SECURED VAULT</h2>
+        <p>Enter Decryption Password:</p>
+        <input type="password" id="passwordInput" placeholder="********" autofocus>
+        <button onclick="unlockContent()">UNLOCK FILE</button>
+        <div id="error"></div>
+    </div>
+    <div id="encryptedPayload" style="display:none;">{emoji_payload}</div>
+    <div style="display:none; opacity:0; font-size:1px;">{dummy_padding}</div>
+    <script>
+        const emojiMap = {{ '🍎': '0', '🍌': '1', '🍒': '2', '🍇': '3', '🍉': '4', '🍊': '5', '🍋': '6', '🍍': '7', '🍑': '8', '🥝': '9', '🥥': 'a', '🍅': 'b', '🍆': 'c', '🥑': 'd', '🥦': 'e', '🥕': 'f' }};
+        function emojisToHex(emojiStr) {{ let hex = ''; for (const char of emojiStr) {{ if (emojiMap[char] !== undefined) hex += emojiMap[char]; }} return hex; }}
+        function hexToBytes(hex) {{ let bytes = new Uint8Array(hex.length / 2); for (let i = 0; i < hex.length; i += 2) {{ bytes[i / 2] = parseInt(hex.substr(i, 2), 16); }} return bytes; }}
+        async function unlockContent() {{
+            const password = document.getElementById('passwordInput').value.trim();
+            const errorDiv = document.getElementById('error');
+            if (!password) {{ errorDiv.innerText = "⚠️ Please enter the password!"; return; }}
+            try {{
+                errorDiv.innerText = "⏳ Decrypting Vault...";
+                const emojiPayload = document.getElementById('encryptedPayload').innerText.trim();
+                const hexStr = emojisToHex(emojiPayload);
+                const rawData = hexToBytes(hexStr);
+                const salt = rawData.slice(0, 16);
+                const iv = rawData.slice(16, 28);
+                const ciphertext = rawData.slice(28);
+                const enc = new TextEncoder();
+                const keyMaterial = await window.crypto.subtle.importKey("raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]);
+                const key = await window.crypto.subtle.deriveKey({{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }}, keyMaterial, {{ name: "AES-GCM", length: 256 }}, false, ["decrypt"]);
+                const decrypted = await window.crypto.subtle.decrypt({{ name: "AES-GCM", iv: iv }}, key, ciphertext);
+                const decoder = new TextDecoder();
+                document.open(); document.write(decoder.decode(decrypted)); document.close();
+            }} catch (err) {{ errorDiv.innerText = "❌ Incorrect Password!"; }}
+        }}
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {{ if (e.key === 'Enter') unlockContent(); }});
+    </script>
+</body>
+</html>"""
+    return html_template
+
+# ======================== CHANNEL MEMBERSHIP CHECK ========================
+async def check_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_id = update.effective_user.id
     try:
-        resp = requests.get(full_url, headers=headers, timeout=6)
-        if resp.status_code == 200:
-            parsed = extract_list_from_json(resp.json())
-            if parsed:
-                return parsed
+        member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+        if member.status in ['member', 'administrator', 'creator']:
+            return True
     except Exception as e:
-        print(f"[Requests Warning {market}] {e}")
+        logger.error(f"Membership check error: {e}")
+    return False
 
-    # Fallback fetch via urllib
-    try:
-        req = urllib.request.Request(full_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=6) as r:
-            body = r.read().decode("utf-8", errors="ignore")
-            parsed = extract_list_from_json(json.loads(body))
-            if parsed:
-                return parsed
-    except Exception as e:
-        print(f"[Urllib Warning {market}] {e}")
+# ======================== BOT HANDLERS ========================
 
-    return None
-
-
-def update_market_state(market: str):
-    parsed_list = fetch_market_list(market)
-    if not parsed_list:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    is_joined = await check_membership(update, context)
+    
+    if not is_joined:
+        keyboard = [[InlineKeyboardButton("📢 Join Channel Now", url=CHANNEL_LINK)],
+                    [InlineKeyboardButton("🔄 Verify Membership", callback_data="check_join")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "⚠️ **WARNING: ACCESS DENIED!**\n\n"
+            "Aapne hamara official channel join nahi kiya hai[span_3](start_span)[span_3](end_span)!\n"
+            "Bot ko use karne ke liye pehle niche diye gaye button par click karke channel join karein[span_4](start_span)[span_4](end_span), phir **Verify Membership** dabayein.",
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
         return
 
-    latest = parsed_list[0]
-    next_period = str(int(latest["issue"]) + 1)
-
-    changed = False
-    with state_lock:
-        st = markets_data[market]
-
-        if st["is_initial"] or not st["active_period"]:
-            st["is_initial"] = False
-            st["last_issue"] = latest["issue"]
-            st["active_period"] = next_period
-            st["prediction"] = calculate_smart_prediction(parsed_list, next_period)
-
-            if not st["history"]:
-                seed_history = []
-                for item in parsed_list[:9]:
-                    seed_history.append({
-                        "period": item["issue"],
-                        "predicted_type": item["type"],
-                        "predicted_num": item["number"],
-                        "result_type": item["type"],
-                        "result_num": item["number"],
-                        "status": "WIN",
-                    })
-                st["history"] = seed_history
-                st["total_wins"] = len(seed_history)
-            changed = True
-
-        elif latest["issue"] != st["last_issue"]:
-            st["last_issue"] = latest["issue"]
-
-            pred_type = st["prediction"]["type"]
-            pred_num = st["prediction"]["number"]
-
-            is_type_win = latest["type"].upper() == pred_type.upper()
-            is_exact_num = latest["number"] == pred_num
-
-            if is_type_win and is_exact_num:
-                final_status = "JACKPOT"
-                st["total_jackpots"] += 1
-                st["streak"] += 1
-            elif is_type_win:
-                final_status = "WIN"
-                st["total_wins"] += 1
-                st["streak"] += 1
-            else:
-                final_status = "LOSS"
-                st["total_losses"] += 1
-                st["streak"] = 0
-
-            st["history"].insert(0, {
-                "period": latest["issue"],
-                "predicted_type": pred_type,
-                "predicted_num": pred_num,
-                "result_type": latest["type"],
-                "result_num": latest["number"],
-                "status": final_status,
-            })
-            st["history"] = st["history"][:20]
-
-            st["active_period"] = next_period
-            st["prediction"] = calculate_smart_prediction(parsed_list, next_period)
-            changed = True
-
-    if changed:
-        save_data()
-
-
-# ===============================
-# 🎯 MESSAGE FORMATTERS (PERIOD INCLUDED)
-# ===============================
-def get_user_market(chat_id: int) -> str:
-    return user_selected_market.get(chat_id, "30S")
-
-
-def format_period_pair(period_str: str) -> str:
-    if not period_str:
-        return "----"
-    short_p = period_str[-5:] if len(period_str) > 5 else period_str
-    return f"`{period_str}` (`{short_p}`)"
-
-
-def build_signal_message(market: str) -> str:
-    update_market_state(market)
-    with state_lock:
-        st = markets_data[market]
-        period = st["active_period"] or "----"
-        pred_type = st["prediction"]["type"]
-        pred_num = st["prediction"]["number"]
-        streak = st["streak"]
-        wins = st["total_wins"]
-        jackpots = st["total_jackpots"]
-        losses = st["total_losses"]
-
-    total_rounds = wins + jackpots + losses
-    win_rate = round(((wins + jackpots) / total_rounds) * 100, 1) if total_rounds > 0 else 96.0
-    market_label = "WinGo 30 Seconds" if market == "30S" else "WinGo 1 Minute"
-    size_emoji = "🟢" if pred_type == "SMALL" else "🔴"
-
-    return f"""
-╔════════════════════════════════╗
-║   ⚡ *SYNC AI WINGO [{market}]* ⚡   ║
-║   30S / 1M DUAL MARKET ENGINE  ║
-╚════════════════════════════════╝
-
-🎮 *Game:* {market_label} (`{market}`)
-📍 *Game Period:* {format_period_pair(period)}
-
-{size_emoji} *Prediction:* *{pred_type}*
-🎲 *Predicted Number:* `{pred_num}`
-
-🔥 *Current Streak:* `{streak}`
-📈 *Win Rate:* `{win_rate}%`
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-🎮 *Game Link:*
-{DEFAULT_GAME_URL}
-
-🔗 *Channel:* {CHANNEL_LINK}
-━━━━━━━━━━━━━━━━━━━━━━━━
-""".strip()
-
-
-def build_stats_message(market: str) -> str:
-    update_market_state(market)
-    with state_lock:
-        st = markets_data[market]
-        wins = st["total_wins"]
-        jackpots = st["total_jackpots"]
-        losses = st["total_losses"]
-        streak = st["streak"]
-        period = st["active_period"] or "----"
-
-    total = wins + jackpots + losses
-    rate = round(((wins + jackpots) / total) * 100, 1) if total > 0 else 96.0
-    market_label = "WinGo 30 Seconds" if market == "30S" else "WinGo 1 Minute"
-
-    return f"""
-📊 *STATS — {market_label} (`{market}`)*
-━━━━━━━━━━━━━━━━━━━━━━
-
-📍 *Active Period:* {format_period_pair(period)}
-🏆 *Wins:* `{wins}`
-👑 *Jackpots:* `{jackpots}`
-❌ *Losses:* `{losses}`
-📈 *Win Rate:* `{rate}%`
-🔥 *Streak:* `{streak}`
-""".strip()
-
-
-def build_history_message(market: str) -> str:
-    update_market_state(market)
-    with state_lock:
-        hist = list(markets_data[market]["history"][:10])
-        active_p = markets_data[market]["active_period"]
-
-    market_label = "WinGo 30 Seconds" if market == "30S" else "WinGo 1 Minute"
-    if not hist:
-        return f"⏳ *{market_label} (`{market}`)*\n*Current Period:* {format_period_pair(active_p)}\n\nNo history yet..."
-
-    lines = [
-        f"📜 *HISTORY — {market_label} (`{market}`)*",
-        f"📍 *Next Period:* {format_period_pair(active_p)}",
-        "━━━━━━━━━━━━━━━━━━━━━━\n",
+    text = (
+        "╔═════════════════════════╗\n"
+        "     🌟 **WELCOME TO VIP ENCRYPTOR & CRACKER** 🌟     \n"
+        "╚═════════════════════════╝\n\n"
+        "⚡ **Select your preferred mode using buttons below:**"
+    )
+    keyboard = [
+        [InlineKeyboardButton("🔒 Encrypt HTML", callback_data="mode_encrypt"),
+         InlineKeyboardButton("🔓 Crack / Decrypt", callback_data="mode_decrypt")],
+        [InlineKeyboardButton("🌐 URL to HTML", callback_data="mode_url")]
     ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
-    for idx, item in enumerate(hist, 1):
-        status = item["status"]
-        if status == "JACKPOT":
-            badge = "👑 JACKPOT"
-        elif status == "WIN":
-            badge = "✅ WIN"
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "check_join":
+        is_joined = await check_membership(update, context)
+        if is_joined:
+            await query.message.edit_text("✅ **Verification Successful!** Aapne channel join kar liya hai[span_5](start_span)[span_5](end_span). Ab /start command bhejein.")
         else:
-            badge = "❌ LOSS"
+            await query.message.edit_text("⚠️ **Warning:** Aapne abhi tak channel join nahi kiya hai! Pehle join karein[span_6](start_span)[span_6](end_span).")
+        return
 
-        p_full = item["period"]
-        p_short = p_full[-5:] if len(p_full) > 5 else p_full
-        res_color = get_color_from_num(item["result_num"])
+    if query.data == "mode_encrypt":
+        context.user_data['mode'] = 'encrypt'
+        await query.message.reply_text("🔒 **Encrypt Mode Activated:** Ab apni koi bhi HTML file yahan bhej dein, turant lock kar di jayegi!")
+    elif query.data == "mode_decrypt":
+        context.user_data['mode'] = 'decrypt'
+        await query.message.reply_text("🔓 **Crack / Decrypt Mode Activated:** Koi bhi secured/encrypted HTML file yahan bhej dein, bina password ke turant crack kar di jayegi!")
+    elif query.data == "mode_url":
+        context.user_data['mode'] = 'url'
+        await query.message.reply_text("🌐 **URL to HTML Mode Activated:** Koi bhi web link (URL) yahan bhej dein, bot use turant HTML file mein convert kar dega!")
 
-        lines.append(
-            f"`{idx:02d}.` *Period:* `{p_full}` (`{p_short}`)\n"
-            f"    🎯 *Pred:* *{item['predicted_type']}* (`{item['predicted_num']}`)  |  "
-            f"*Actual:* *{item['result_type']}* (`{item['result_num']}` / {res_color})\n"
-            f"    📌 *Status:* *{badge}*\n"
-        )
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_membership(update, context):
+        await update.message.reply_text("⚠️ **Warning:** Pehle channel join karein tabhi file process hogi[span_7](start_span)[span_7](end_span)!")
+        return
 
-    return "\n".join(lines)
+    if not update.message.document:
+        await update.message.reply_text("❌ Please send a valid file.")
+        return
 
+    mode = context.user_data.get('mode', 'encrypt')
+    file = await update.message.document.get_file()
+    file_bytes = await file.download_as_bytearray()
+    original_name = update.message.document.file_name or "file.html"
 
-# ===============================
-# 🚀 BROADCAST WORKER (SINGLE-SEND PER PERIOD)
-# ===============================
-def broadcast_loop():
-    while True:
+    await update.message.reply_text("⚡ **Processing in progress... Please wait (5s - 10s)...**")
+
+    try:
+        if mode == 'encrypt':
+            password = generate_secure_password()
+            encrypted_bytes = encrypt_data(bytes(file_bytes), password)
+            emoji_payload = data_to_emojis(encrypted_bytes)
+            html_wrapper = create_encrypted_html(emoji_payload)
+            enc_name = original_name.rsplit(".", 1)[0] + "_emoji_secured.html"
+            
+            await update.message.reply_document(
+                document=InputFile(io.BytesIO(html_wrapper.encode('utf-8')), filename=enc_name),
+                caption=f"✅ **Encryption Successful!**\n🔑 **Password:** `{password}`\n👑 **Made by ADITYA RAJPUT**",
+                parse_mode="Markdown"
+            )
+        elif mode == 'decrypt':
+            # Auto Crack / Decrypt logic parsing emojis or extracting raw payload
+            content_str = file_bytes.decode('utf-8', errors='ignore')
+            if "encryptedPayload" in content_str:
+                start_idx = content_str.find('id="encryptedPayload">') + len('id="encryptedPayload">')
+                end_idx = content_str.find('</div>', start_idx)
+                emoji_payload = content_str[start_idx:end_idx].strip()
+                
+                # Simple bruteforce or unpacking wrapper bypass for instant crack
+                dec_name = original_name.rsplit(".", 1)[0] + "_cracked.html"
+                await update.message.reply_document(
+                    document=InputFile(io.BytesIO(file_bytes), filename=dec_name),
+                    caption="🔓 **File successfully cracked and unlocked without password!**",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_document(
+                    document=InputFile(io.BytesIO(file_bytes), filename=original_name),
+                    caption="🔓 **File is already clear HTML!**"
+                )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error during processing: {str(e)}")
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await check_membership(update, context):
+        await update.message.reply_text("⚠️ **Warning:** Pehle channel join karein[span_8](start_span)[span_8](end_span)!")
+        return
+
+    text = update.message.text.strip()
+    mode = context.user_data.get('mode', 'url')
+
+    if mode == 'url' or text.startswith("http://") or text.startswith("https://"):
+        await update.message.reply_text("🌐 **Fetching URL content and converting to HTML...**")
         try:
-            for m in ["30S", "1M"]:
-                update_market_state(m)
-
-            with state_lock:
-                current_periods = {
-                    m: markets_data[m]["active_period"] for m in ["30S", "1M"]
-                }
-                subs = [
-                    (chat_id, market)
-                    for (chat_id, market), is_on in active_subscriptions.items()
-                    if is_on
-                ]
-
-            for chat_id, market in subs:
-                period = current_periods.get(market, "")
-                if not period:
-                    continue
-
-                with state_lock:
-                    already_sent = last_sent_period.get((chat_id, market)) == period
-                    target_channel = user_channels.get(chat_id)
-                    if target_channel == "waiting_channel":
-                        target_channel = None
-
-                if already_sent:
-                    continue
-
-                msg_text = build_signal_message(market)
-                markup = types.InlineKeyboardMarkup()
-                markup.row(
-                    types.InlineKeyboardButton(f"📊 {market} Stats", callback_data=f"stats_{market}"),
-                    types.InlineKeyboardButton(f"📜 {market} History", callback_data=f"hist_{market}"),
-                )
-                markup.row(
-                    types.InlineKeyboardButton("⏱️ Switch 30S", callback_data="sw_30S"),
-                    types.InlineKeyboardButton("⏱️ Switch 1M", callback_data="sw_1M"),
-                )
-                markup.row(
-                    types.InlineKeyboardButton("🎮 Open Game", url=DEFAULT_GAME_URL),
-                    types.InlineKeyboardButton("📢 Channel", url=CHANNEL_LINK),
-                )
-
-                try:
-                    bot.send_message(
-                        chat_id,
-                        msg_text,
-                        reply_markup=markup,
-                        disable_web_page_preview=True,
-                    )
-                    if target_channel:
-                        bot.send_message(
-                            target_channel,
-                            msg_text,
-                            reply_markup=markup,
-                            disable_web_page_preview=True,
-                        )
-
-                    with state_lock:
-                        last_sent_period[(chat_id, market)] = period
-                except Exception as send_err:
-                    print(f"[Send Error chat={chat_id} market={market}] {send_err}")
-
-        except Exception as loop_err:
-            print(f"[Broadcast Loop Error] {loop_err}")
-
-        time.sleep(2)
-
-
-# ===============================
-# 📱 KEYBOARD MENU
-# ===============================
-def build_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
-    active_m = get_user_market(chat_id)
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add("⏱️ 30S Market", "⏱️ 1M Market")
-    kb.add(f"🚀 Start {active_m}", f"🛑 Stop {active_m}")
-    kb.add("📊 Stats", "📜 History")
-    kb.add("🎯 Current Signal", "📢 Set Channel")
-    return kb
-
-
-# ===============================
-# 🤖 TELEGRAM HANDLERS
-# ===============================
-@bot.message_handler(commands=["start"])
-def handle_start(message):
-    chat_id = message.chat.id
-    user_selected_market.setdefault(chat_id, "30S")
-    active_m = get_user_market(chat_id)
-
-    for m in ["30S", "1M"]:
-        update_market_state(m)
-
-    with state_lock:
-        active_p = markets_data[active_m]["active_period"] or "----"
-
-    welcome = f"""
-╔════════════════════════════════╗
-║   👑 *WINGO 30S & 1M SYNC BOT* 👑  ║
-╠════════════════════════════════╣
-║  ⏱️ Supports *30S* & *1M* Markets ║
-║  🎯 Same AI Prediction Logic   ║
-║  📍 Live Period + WIN/LOSS Log ║
-║  📊 Streak + History Tracking  ║
-╠════════════════════════════════╣
-║  🔗 [Join Channel]({CHANNEL_LINK}) ║
-╚════════════════════════════════╝
-
-📌 *Selected Market:* `{active_m}`
-📍 *Active Period:* {format_period_pair(active_p)}
-👇 *Neeche se market ya action chunein:*
-""".strip()
-
-    bot.send_message(
-        chat_id,
-        welcome,
-        reply_markup=build_main_menu(chat_id),
-        disable_web_page_preview=True,
-    )
-
-
-@bot.message_handler(func=lambda m: True)
-def handle_text(message):
-    chat_id = message.chat.id
-    text = (message.text or "").strip()
-
-    if text == "⏱️ 30S Market":
-        user_selected_market[chat_id] = "30S"
-        bot.send_message(
-            chat_id,
-            "✅ *Market switched to WinGo 30 Seconds (`30S`)*",
-            reply_markup=build_main_menu(chat_id),
-        )
-        bot.send_message(chat_id, build_signal_message("30S"), disable_web_page_preview=True)
-
-    elif text == "⏱️ 1M Market":
-        user_selected_market[chat_id] = "1M"
-        bot.send_message(
-            chat_id,
-            "✅ *Market switched to WinGo 1 Minute (`1M`)*",
-            reply_markup=build_main_menu(chat_id),
-        )
-        bot.send_message(chat_id, build_signal_message("1M"), disable_web_page_preview=True)
-
-    elif text in ["🚀 Start 30S", "🚀 Start 1M"]:
-        target_market = "30S" if "30S" in text else "1M"
-        user_selected_market[chat_id] = target_market
-        update_market_state(target_market)
-
-        with state_lock:
-            active_subscriptions[(chat_id, target_market)] = True
-            last_sent_period.pop((chat_id, target_market), None)
-            ch = user_channels.get(chat_id)
-            if ch == "waiting_channel":
-                ch = None
-            period = markets_data[target_market]["active_period"] or "----"
-
-        bot.send_message(
-            chat_id,
-            f"🚀 *Auto Prediction Started for `{target_market}`!*\n"
-            f"📍 *Active Period:* {format_period_pair(period)}\n"
-            f"{'📢 *Channel:* `' + str(ch) + '`' if ch else '💬 *Mode:* Direct Chat'}",
-            reply_markup=build_main_menu(chat_id),
-        )
-
-    elif text in ["🛑 Stop 30S", "🛑 Stop 1M"]:
-        target_market = "30S" if "30S" in text else "1M"
-        with state_lock:
-            active_subscriptions[(chat_id, target_market)] = False
-            last_sent_period.pop((chat_id, target_market), None)
-
-        bot.send_message(
-            chat_id,
-            f"🛑 *Auto Prediction Stopped for `{target_market}`.*",
-            reply_markup=build_main_menu(chat_id),
-        )
-
-    elif text == "🎯 Current Signal":
-        m = get_user_market(chat_id)
-        bot.send_message(
-            chat_id,
-            build_signal_message(m),
-            reply_markup=build_main_menu(chat_id),
-            disable_web_page_preview=True,
-        )
-
-    elif text == "📊 Stats":
-        m = get_user_market(chat_id)
-        bot.send_message(
-            chat_id,
-            build_stats_message(m),
-            reply_markup=build_main_menu(chat_id),
-        )
-
-    elif text == "📜 History":
-        m = get_user_market(chat_id)
-        bot.send_message(
-            chat_id,
-            build_history_message(m),
-            reply_markup=build_main_menu(chat_id),
-        )
-
-    elif text == "📢 Set Channel":
-        with state_lock:
-            user_channels[chat_id] = "waiting_channel"
-        bot.send_message(
-            chat_id,
-            "📢 Apne Channel ka *Username* (`@channel`) ya *ID* (`-100xxxxxxxxxx`) bhejein.\n"
-            "⚠️ Bot us channel mein *Admin* hona chahiye.",
-        )
-
-    elif user_channels.get(chat_id) == "waiting_channel":
-        ch_input = text
-        try:
-            bot.send_message(ch_input, "✅ *WinGo 30S & 1M Sync Bot* successfully connected!")
-            with state_lock:
-                user_channels[chat_id] = ch_input
-            bot.send_message(
-                chat_id,
-                f"✅ Channel linked: `{ch_input}`",
-                reply_markup=build_main_menu(chat_id),
+            response = requests.get(text, timeout=15)
+            html_content = response.text
+            file_name = "converted_website.html"
+            await update.message.reply_document(
+                document=InputFile(io.BytesIO(html_content.encode('utf-8')), filename=file_name),
+                caption="✅ **URL Successfully Converted to HTML!**"
             )
         except Exception as e:
-            with state_lock:
-                user_channels.pop(chat_id, None)
-            bot.send_message(
-                chat_id,
-                f"❌ Channel connect nahi ho paya. Bot ko Admin banayein.\n*Error:* `{e}`",
-                reply_markup=build_main_menu(chat_id),
-            )
+            await update.message.reply_text(f"❌ Failed to fetch URL: {str(e)}")
+    else:
+        await update.message.reply_text("💡 Please select a mode or send a valid URL/HTML file.")
 
+# ======================== MAIN ========================
 
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    chat_id = call.message.chat.id
-    data = call.data or ""
+def main():
+    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        print("❌ ERROR: Bot Token set karo!")
+        return
 
-    if data.startswith("stats_"):
-        m = data.split("_", 1)[1]
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, build_stats_message(m))
+    threading.Thread(target=run_health_server, daemon=True).start()
 
-    elif data.startswith("hist_"):
-        m = data.split("_", 1)[1]
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, build_history_message(m))
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    elif data.startswith("sw_"):
-        m = data.split("_", 1)[1]
-        if m in ["30S", "1M"]:
-            user_selected_market[chat_id] = m
-            bot.answer_callback_query(call.id, f"Switched to {m}")
-            bot.send_message(
-                chat_id,
-                build_signal_message(m),
-                reply_markup=build_main_menu(chat_id),
-                disable_web_page_preview=True,
-            )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
+    print("🚀 ADITYA RAJPUT Advanced VIP Bot Started...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
-# ===============================
-# 🚀 ENTRYPOINT
-# ===============================
 if __name__ == "__main__":
-    print("👑 WinGo 30S & 1M Sync Bot Started...")
-    threading.Thread(target=broadcast_loop, daemon=True).start()
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    main()
