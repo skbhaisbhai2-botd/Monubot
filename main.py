@@ -34,7 +34,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot is alive and running!")
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -84,7 +84,7 @@ def generate_secure_password() -> str:
 
 def create_encrypted_html(emoji_payload: str) -> str:
     dummy_padding = ''.join(random.choice(list(EMOJI_MAP.values())) for _ in range(8000))
-    
+
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -183,8 +183,8 @@ def create_encrypted_html(emoji_payload: str) -> str:
         }}
 
         document.addEventListener('keydown', function(e) {{
-            if (e.key === 'F12' || 
-                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) || 
+            if (e.key === 'F12' ||
+                (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J')) ||
                 (e.ctrlKey && e.key === 'u')) {{
                 e.preventDefault();
                 return false;
@@ -194,7 +194,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
         async function unlockContent() {{
             const password = document.getElementById('passwordInput').value.trim();
             const errorDiv = document.getElementById('error');
-            
+
             if (!password) {{
                 errorDiv.innerText = "⚠️ Please enter the password!";
                 return;
@@ -214,7 +214,7 @@ def create_encrypted_html(emoji_payload: str) -> str:
                 const keyMaterial = await window.crypto.subtle.importKey(
                     "raw", enc.encode(password), {{ name: "PBKDF2" }}, false, ["deriveKey"]
                 );
-                
+
                 const key = await window.crypto.subtle.deriveKey(
                     {{ name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" }},
                     keyMaterial,
@@ -252,20 +252,20 @@ def create_encrypted_html(emoji_payload: str) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "╔═════════════════════════╗\n"
-        "     🌟 **WELCOME TO VIP ENCRYPTOR** 🌟     \n"
+        "     🌟 <b>WELCOME TO VIP ENCRYPTOR</b> 🌟     \n"
         "╚═════════════════════════╝\n\n"
-        "⚡ **Advanced Emoji Cipher Security System**\n\n"
-        "📂 **How to Use:**\n"
-        "• Koi bhi **HTML file** direct yahan chat mein upload karein.\n"
+        "⚡ <b>Advanced Emoji Cipher Security System</b>\n\n"
+        "📂 <b>How to Use:</b>\n"
+        "• Koi bhi <b>HTML file</b> direct yahan chat mein upload karein.\n"
         "• Bot microseconds mein secure password generate karke file ko lock kar dega.\n"
-        "• Code poori tarah se **Emojis (🍎🍌🍒)** mein convert ho jayega!\n\n"
-        "🛡️ **Security Features:**\n"
+        "• Code poori tarah se <b>Emojis (🍎🍌🍒)</b> mein convert ho jayega!\n\n"
+        "🛡️ <b>Security Features:</b>\n"
         "• AES-256-GCM Military Grade Encryption\n"
         "• Anti-Inspect / Copy Block Protection\n"
         "• Auto Password Generation\n\n"
-        "✨ *Send your HTML file now to begin!*"
+        "✨ <i>Send your HTML file now to begin!</i>"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -282,7 +282,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         encrypted_bytes = encrypt_data(bytes(file_bytes), password)
         emoji_payload = data_to_emojis(encrypted_bytes)
         html_wrapper = create_encrypted_html(emoji_payload)
-        
+
         enc_name = original_name.rsplit(".", 1)[0] + "_emoji_secured.html"
         file_size_kb = len(html_wrapper.encode('utf-8')) / 1024
 
