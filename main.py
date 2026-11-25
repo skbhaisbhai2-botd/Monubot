@@ -1,5 +1,6 @@
 import os
 import io
+import asyncio
 import logging
 import threading
 import random
@@ -307,20 +308,36 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======================== MAIN ========================
 
-def main():
-    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        print("❌ ERROR: Bot Token set karo!")
-        return
-
-    threading.Thread(target=run_health_server, daemon=True).start()
-
+async def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, handle_document))
 
     print("🚀 ADITYA RAJPUT Emoji Encryptor Bot Started...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    async with app:
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+
+
+def main():
+    if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        print("❌ ERROR: Bot Token set karo!")
+        return
+
+    threading.Thread(target=run_health_server, daemon=True).start()
+    asyncio.run(run_bot())
 
 
 if __name__ == "__main__":
